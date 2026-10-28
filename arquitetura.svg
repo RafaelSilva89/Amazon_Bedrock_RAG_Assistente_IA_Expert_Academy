@@ -1,0 +1,232 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1400" height="1200" viewBox="0 0 1400 1200" role="img" aria-labelledby="t d" font-family="Arial, Helvetica, sans-serif">
+<title id="t">Amazon Bedrock · Arquitetura do projeto RAG</title>
+<desc id="d">Assistente da IA Expert Academy construído com RAG no Amazon Bedrock, na região us-east-1. Os PDFs (IA Expert Academy e Termos de uso) são enviados ao bucket S3 curso-bedrock-s3. Ao sincronizar, a Knowledge Base knowledge-base-quick-start-2d1lr (ID 4SCLDZ9ZTH, tipo Bedrock Managed) divide os documentos em trechos, gera os embeddings e armazena os vetores de forma gerenciada. No computador local, o usuário acessa a aplicação Streamlit (app.py) em localhost:8501. A função ask chama o retrieve do bedrock-agent-runtime com managedSearchConfiguration, recebe os trechos com score e página, monta o prompt com o contexto e chama o converse do bedrock-runtime com o modelo Amazon Nova Micro (us.amazon.nova-micro-v1:0). A resposta aparece no chat com as fontes e fica salva no session_state. As credenciais IAM são lidas de um arquivo CSV fora do código. No notebook de estudo, o Amazon Titan Text Embeddings V2 gera vetores de 1024 dimensões, usados para visualização com PCA e busca por similaridade de cosseno.</desc>
+<defs>
+  <marker id="aDark" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#232F3E"/></marker>
+  <marker id="aTeal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#017E6B"/></marker>
+  <marker id="aGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5B7A0F"/></marker>
+  <marker id="aOrange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#C25E00"/></marker>
+  <marker id="aRed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#DD344C"/></marker>
+</defs>
+
+<rect x="0" y="0" width="1400" height="1200" fill="#FFFFFF"/>
+
+<!-- ===================== título ===================== -->
+<text x="700" y="36" font-size="20" font-weight="bold" fill="#232F3E" text-anchor="middle">Assistente IA Expert Academy · RAG com Amazon Bedrock</text>
+<text x="700" y="60" font-size="13.5" fill="#545B64" text-anchor="middle">PDF → S3 → Knowledge Base (chunking, embeddings, busca semântica) → Nova Micro → resposta com fontes</text>
+
+<!-- ===================== computador local ===================== -->
+<rect x="20" y="90" width="345" height="910" fill="none" stroke="#6B737C" stroke-width="2" stroke-dasharray="8,5"/>
+<rect x="20" y="90" width="150" height="30" fill="#6B737C"/>
+<text x="95" y="110" font-size="13" font-weight="bold" fill="#FFFFFF" text-anchor="middle">Computador local</text>
+
+<!-- usuário -->
+<g transform="translate(192,150)">
+  <circle cx="0" cy="-12" r="9" fill="none" stroke="#232F3E" stroke-width="2.5"/>
+  <path d="M-16,18 C-16,2 16,2 16,18" fill="none" stroke="#232F3E" stroke-width="2.5"/>
+</g>
+<text x="192" y="190" font-size="14" font-weight="bold" fill="#232F3E" text-anchor="middle">Usuário (navegador)</text>
+<text x="192" y="206" font-size="12" fill="#545B64" text-anchor="middle">http://localhost:8501</text>
+
+<!-- aplicação Streamlit -->
+<rect x="40" y="255" width="305" height="480" rx="6" fill="#FFFFFF" stroke="#FF4B4B" stroke-width="2.2"/>
+<rect x="56" y="270" width="44" height="44" rx="7" fill="#FF4B4B"/>
+<path d="M66,304 L78,280 L90,304 Z" fill="#FFFFFF"/>
+<path d="M61,304 L69,290 L77,304 Z" fill="#FFD5D5"/>
+<text x="112" y="288" font-size="14.5" font-weight="bold" fill="#232F3E">Aplicação Streamlit</text>
+<text x="112" y="306" font-size="12.5" fill="#545B64" font-family="Consolas, monospace">app.py</text>
+<g font-size="12" fill="#232F3E">
+  <text x="58" y="342">• Chat: st.chat_input / st.chat_message</text>
+  <text x="58" y="362">• Histórico: st.session_state</text>
+  <text x="58" y="382">• Clientes AWS: @st.cache_resource</text>
+  <text x="58" y="402">• Barra lateral: trechos e temperature</text>
+  <text x="58" y="422">• Fontes: st.expander (arquivo, página)</text>
+</g>
+
+<!-- função ask -->
+<rect x="58" y="440" width="270" height="275" rx="5" fill="#F2F3F3" stroke="#AAB7B8" stroke-width="1.2"/>
+<text x="193" y="463" font-size="13" font-weight="bold" fill="#232F3E" text-anchor="middle" font-family="Consolas, monospace">ask(pergunta)</text>
+<g font-size="12" fill="#232F3E">
+  <text x="72" y="490">retrieve → trechos do PDF</text>
+  <text x="72" y="545">monta o prompt:</text>
+  <text x="72" y="561" fill="#545B64">"responda só com o contexto"</text>
+  <text x="72" y="577" fill="#545B64">contexto + pergunta</text>
+  <text x="72" y="626">converse → resposta</text>
+  <text x="72" y="700">mostra resposta + fontes</text>
+</g>
+
+<!-- credenciais -->
+<rect x="40" y="765" width="305" height="80" rx="5" fill="#FDECEE" stroke="#DD344C" stroke-width="1.5"/>
+<text x="192" y="790" font-size="12.5" font-weight="bold" fill="#232F3E" text-anchor="middle">Credenciais IAM (fora do código)</text>
+<text x="192" y="808" font-size="11.5" fill="#232F3E" text-anchor="middle" font-family="Consolas, monospace">curso_bedrock_accessKeys.csv</text>
+<text x="192" y="826" font-size="11.5" fill="#545B64" text-anchor="middle">lidas por uma única boto3.Session</text>
+
+<!-- notebook -->
+<rect x="40" y="870" width="305" height="115" rx="5" fill="#FFF4E8" stroke="#ED7100" stroke-width="1.8"/>
+<text x="192" y="895" font-size="13" font-weight="bold" fill="#232F3E" text-anchor="middle">Notebook RAG (estudo)</text>
+<text x="192" y="915" font-size="11.5" fill="#232F3E" text-anchor="middle">embeddings → PCA (gráfico 2D)</text>
+<text x="192" y="932" font-size="11.5" fill="#232F3E" text-anchor="middle">→ similaridade de cosseno</text>
+<text x="192" y="958" font-size="11" fill="#545B64" text-anchor="middle">NumPy · scikit-learn · Matplotlib</text>
+
+<!-- ===================== AWS Cloud / Região ===================== -->
+<rect x="390" y="90" width="990" height="910" fill="none" stroke="#232F3E" stroke-width="2"/>
+<rect x="390" y="90" width="92" height="30" fill="#232F3E"/>
+<text x="436" y="110" font-size="13" font-weight="bold" fill="#FFFFFF" text-anchor="middle">AWS Cloud</text>
+
+<rect x="410" y="135" width="950" height="845" fill="none" stroke="#00A4A6" stroke-width="2" stroke-dasharray="8,5"/>
+<rect x="410" y="135" width="30" height="30" fill="#00A4A6"/>
+<path d="M420,159 V141 M420,142 H432 L428,147 L432,152 H420" fill="none" stroke="#FFFFFF" stroke-width="2"/>
+<text x="450" y="156" font-size="14" font-weight="bold" fill="#232F3E">Região us-east-1 (N. Virginia)</text>
+
+<!-- ===================== Knowledge Base ===================== -->
+<rect x="640" y="180" width="700" height="370" fill="#F2FAF8" stroke="#01A88D" stroke-width="2.5"/>
+<rect x="640" y="180" width="30" height="30" fill="#01A88D"/>
+<path d="M648,188 h14 v14 h-14 z M648,193 h14 M648,198 h14 M653,188 v14" fill="none" stroke="#FFFFFF" stroke-width="1.5"/>
+<text x="680" y="201" font-size="14.5" font-weight="bold" fill="#232F3E">Amazon Bedrock · Knowledge Base</text>
+<text x="680" y="222" font-size="12" fill="#545B64">knowledge-base-quick-start-2d1lr (4SCLDZ9ZTH) · tipo Bedrock Managed</text>
+<text x="680" y="250" font-size="12" font-style="italic" fill="#017E6B">Ingestão: quando a base é sincronizada (sync)</text>
+
+<!-- etapas de ingestão -->
+<rect x="680" y="262" width="190" height="118" rx="5" fill="#FFFFFF" stroke="#8C4FFF" stroke-width="1.8"/>
+<path d="M760,276 h22 l8,8 v28 h-30 z" fill="#FFFFFF" stroke="#8C4FFF" stroke-width="2"/>
+<path d="M764,290 h22 M764,297 h22 M764,304 h22" stroke="#8C4FFF" stroke-width="1.6" stroke-dasharray="3,2"/>
+<text x="775" y="338" font-size="13" font-weight="bold" fill="#232F3E" text-anchor="middle">Chunking</text>
+<text x="775" y="356" font-size="11.5" fill="#545B64" text-anchor="middle">divide os PDFs</text>
+<text x="775" y="371" font-size="11.5" fill="#545B64" text-anchor="middle">em trechos</text>
+
+<rect x="900" y="262" width="190" height="118" rx="5" fill="#FFFFFF" stroke="#01A88D" stroke-width="1.8"/>
+<g fill="#01A88D"><circle cx="970" cy="284" r="3"/><circle cx="980" cy="284" r="3"/><circle cx="970" cy="294" r="3"/><circle cx="980" cy="294" r="3"/><circle cx="990" cy="294" r="3"/><circle cx="970" cy="304" r="3"/><circle cx="980" cy="304" r="3"/></g>
+<path d="M1000,278 h-4 v32 h4" fill="none" stroke="#01A88D" stroke-width="1.8"/>
+<text x="1004" y="290" font-size="9" fill="#01A88D" font-family="Consolas, monospace">0.23</text>
+<text x="1004" y="302" font-size="9" fill="#01A88D" font-family="Consolas, monospace">-0.11</text>
+<text x="995" y="338" font-size="13" font-weight="bold" fill="#232F3E" text-anchor="middle">Embeddings</text>
+<text x="995" y="356" font-size="11.5" fill="#545B64" text-anchor="middle">cada trecho vira um vetor</text>
+<text x="995" y="371" font-size="11.5" fill="#545B64" text-anchor="middle">(modelo gerenciado)</text>
+
+<rect x="1120" y="262" width="200" height="118" rx="5" fill="#FFFFFF" stroke="#8C4FFF" stroke-width="1.8"/>
+<ellipse cx="1220" cy="281" rx="17" ry="5" fill="#FFFFFF" stroke="#8C4FFF" stroke-width="2"/>
+<path d="M1203,281 v24 a17,5 0 0 0 34,0 v-24 M1203,293 a17,5 0 0 0 34,0" fill="none" stroke="#8C4FFF" stroke-width="2"/>
+<text x="1220" y="338" font-size="13" font-weight="bold" fill="#232F3E" text-anchor="middle">Armazenamento vetorial</text>
+<text x="1220" y="356" font-size="11.5" fill="#545B64" text-anchor="middle">gerenciado pela AWS</text>
+<text x="1220" y="371" font-size="11.5" fill="#545B64" text-anchor="middle">(sem banco para administrar)</text>
+
+<line x1="870" y1="320" x2="898" y2="320" stroke="#017E6B" stroke-width="2.2" marker-end="url(#aTeal)"/>
+<line x1="1090" y1="320" x2="1118" y2="320" stroke="#017E6B" stroke-width="2.2" marker-end="url(#aTeal)"/>
+
+<!-- busca semântica -->
+<text x="680" y="412" font-size="12" font-style="italic" fill="#017E6B">Consulta: a cada pergunta</text>
+<rect x="680" y="424" width="430" height="108" rx="5" fill="#FFFFFF" stroke="#ED7100" stroke-width="2"/>
+<circle cx="716" cy="470" r="13" fill="none" stroke="#ED7100" stroke-width="2.5"/>
+<line x1="725" y1="480" x2="736" y2="492" stroke="#ED7100" stroke-width="3"/>
+<text x="752" y="452" font-size="13.5" font-weight="bold" fill="#232F3E">Busca semântica · retrieve</text>
+<text x="752" y="471" font-size="11.5" fill="#232F3E" font-family="Consolas, monospace">bedrock-agent-runtime</text>
+<text x="752" y="489" font-size="11.5" fill="#232F3E" font-family="Consolas, monospace">managedSearchConfiguration</text>
+<text x="752" y="510" font-size="11.5" fill="#545B64">devolve os trechos mais relevantes,</text>
+<text x="752" y="525" font-size="11.5" fill="#545B64">com score, arquivo e página</text>
+<polyline points="1220,380 1220,478 1112,478" fill="none" stroke="#017E6B" stroke-width="2.2" marker-end="url(#aTeal)"/>
+<text x="1230" y="440" font-size="11" fill="#017E6B">compara a pergunta</text>
+<text x="1230" y="455" font-size="11" fill="#017E6B">com os vetores</text>
+
+<!-- ===================== PDFs e S3 ===================== -->
+<g transform="translate(508,178)">
+  <path d="M0,0 h20 l8,8 v30 h-28 z" fill="#FFFFFF" stroke="#232F3E" stroke-width="1.8"/>
+  <rect x="-4" y="22" width="22" height="11" fill="#DD344C"/>
+  <text x="7" y="31" font-size="8" font-weight="bold" fill="#FFFFFF" text-anchor="middle">PDF</text>
+</g>
+<g transform="translate(540,178)">
+  <path d="M0,0 h20 l8,8 v30 h-28 z" fill="#FFFFFF" stroke="#232F3E" stroke-width="1.8"/>
+  <rect x="-4" y="22" width="22" height="11" fill="#DD344C"/>
+  <text x="7" y="31" font-size="8" font-weight="bold" fill="#FFFFFF" text-anchor="middle">PDF</text>
+</g>
+<text x="530" y="234" font-size="12.5" font-weight="bold" fill="#232F3E" text-anchor="middle">Documentos PDF</text>
+<text x="530" y="249" font-size="11" fill="#545B64" text-anchor="middle">IA Expert Academy · Termos de uso</text>
+
+<line x1="530" y1="256" x2="530" y2="292" stroke="#5B7A0F" stroke-width="2.4" marker-end="url(#aGreen)"/>
+<path d="M508,302 h44 l-6,40 c-2,6 -30,6 -32,0 z" fill="#FFFFFF" stroke="#7AA116" stroke-width="2.5"/>
+<ellipse cx="530" cy="302" rx="22" ry="6" fill="#FFFFFF" stroke="#7AA116" stroke-width="2.5"/>
+<text x="530" y="370" font-size="13" font-weight="bold" fill="#232F3E" text-anchor="middle">Amazon S3</text>
+<text x="530" y="386" font-size="11.5" fill="#545B64" text-anchor="middle" font-family="Consolas, monospace">curso-bedrock-s3</text>
+<line x1="556" y1="320" x2="678" y2="320" stroke="#5B7A0F" stroke-width="2.4" marker-end="url(#aGreen)"/>
+
+<!-- ===================== modelos de fundação ===================== -->
+<rect x="640" y="585" width="700" height="200" fill="none" stroke="#01A88D" stroke-width="2" stroke-dasharray="7,5"/>
+<text x="660" y="608" font-size="13.5" font-weight="bold" fill="#232F3E">Amazon Bedrock · modelos de fundação <tspan font-weight="normal" fill="#545B64" font-family="Consolas, monospace" font-size="12">(bedrock-runtime)</tspan></text>
+
+<rect x="680" y="622" width="310" height="145" rx="5" fill="#FFFFFF" stroke="#01A88D" stroke-width="2"/>
+<circle cx="714" cy="656" r="18" fill="#01A88D"/>
+<path d="M705,656 h18 M714,647 v18 M708,650 l12,12 M720,650 l-12,12" stroke="#FFFFFF" stroke-width="1.8"/>
+<text x="742" y="652" font-size="14" font-weight="bold" fill="#232F3E">Amazon Nova Micro</text>
+<text x="742" y="670" font-size="11.5" fill="#232F3E" font-family="Consolas, monospace">us.amazon.nova-micro-v1:0</text>
+<text x="698" y="700" font-size="11.5" fill="#232F3E"><tspan font-family="Consolas, monospace">converse</tspan> · gera a resposta usando</text>
+<text x="698" y="716" font-size="11.5" fill="#232F3E">somente os trechos recuperados</text>
+<text x="698" y="740" font-size="11" fill="#545B64">só texto · rápido e barato</text>
+<text x="698" y="755" font-size="11" fill="#545B64">temperature 0.2 · até 512 tokens</text>
+
+<rect x="1030" y="622" width="290" height="145" rx="5" fill="#FFFFFF" stroke="#01A88D" stroke-width="2"/>
+<g fill="#01A88D"><circle cx="1056" cy="648" r="3"/><circle cx="1066" cy="648" r="3"/><circle cx="1056" cy="658" r="3"/><circle cx="1066" cy="658" r="3"/><circle cx="1076" cy="658" r="3"/><circle cx="1056" cy="668" r="3"/></g>
+<text x="1090" y="652" font-size="13" font-weight="bold" fill="#232F3E">Amazon Titan Text</text>
+<text x="1090" y="668" font-size="13" font-weight="bold" fill="#232F3E">Embeddings V2</text>
+<text x="1046" y="694" font-size="11.5" fill="#232F3E" font-family="Consolas, monospace">amazon.titan-embed-text-v2:0</text>
+<text x="1046" y="716" font-size="11.5" fill="#232F3E"><tspan font-family="Consolas, monospace">invoke_model</tspan> · vetores de 1024</text>
+<text x="1046" y="732" font-size="11.5" fill="#232F3E">dimensões</text>
+<text x="1046" y="755" font-size="11" fill="#545B64">usado no notebook de estudo</text>
+
+<!-- ===================== custo ===================== -->
+<rect x="640" y="810" width="470" height="92" rx="5" fill="#F7F7F7" stroke="#AAB7B8" stroke-width="1.2"/>
+<text x="656" y="833" font-size="12.5" font-weight="bold" fill="#232F3E">Custo e encerramento</text>
+<text x="656" y="852" font-size="11.5" fill="#232F3E">Base managed: armazenamento (~US$ 5/GB/mês) + buscas por uso.</text>
+<text x="656" y="869" font-size="11.5" fill="#232F3E">Modelos: cobrados por token. Sem OpenSearch nem servidor ligado.</text>
+<text x="656" y="886" font-size="11.5" fill="#232F3E">Ao terminar: apagar a Knowledge Base, o bucket e a chave IAM.</text>
+
+<!-- ===================== setas entre o computador e a AWS ===================== -->
+<!-- 1 usuário → app -->
+<line x1="192" y1="214" x2="192" y2="252" stroke="#232F3E" stroke-width="2.5" marker-end="url(#aDark)"/>
+<!-- 2 ask → retrieve -->
+<line x1="328" y1="468" x2="677" y2="468" stroke="#232F3E" stroke-width="2.5" marker-end="url(#aDark)"/>
+<!-- 3 trechos → ask -->
+<line x1="680" y1="500" x2="331" y2="500" stroke="#ED7100" stroke-width="2.2" stroke-dasharray="7,4" marker-end="url(#aOrange)"/>
+<!-- 4 ask → converse -->
+<line x1="328" y1="640" x2="677" y2="640" stroke="#232F3E" stroke-width="2.5" marker-end="url(#aDark)"/>
+<!-- 5 resposta → ask -->
+<line x1="680" y1="680" x2="331" y2="680" stroke="#01A88D" stroke-width="2.2" stroke-dasharray="7,4" marker-end="url(#aTeal)"/>
+<!-- credenciais → app -->
+<line x1="192" y1="765" x2="192" y2="738" stroke="#DD344C" stroke-width="2" stroke-dasharray="5,3" marker-end="url(#aRed)"/>
+<!-- C notebook → Titan -->
+<polyline points="345,945 1175,945 1175,770" fill="none" stroke="#C25E00" stroke-width="2.2" stroke-dasharray="7,4" marker-end="url(#aOrange)"/>
+
+<!-- ===================== números dos fluxos ===================== -->
+<g font-size="13" font-weight="bold" text-anchor="middle" fill="#FFFFFF">
+  <circle cx="192" cy="232" r="12" fill="#232F3E"/><text x="192" y="237">1</text>
+  <circle cx="470" cy="468" r="12" fill="#232F3E"/><text x="470" y="473">2</text>
+  <circle cx="600" cy="500" r="12" fill="#ED7100"/><text x="600" y="505">3</text>
+  <circle cx="470" cy="640" r="12" fill="#232F3E"/><text x="470" y="645">4</text>
+  <circle cx="600" cy="680" r="12" fill="#01A88D"/><text x="600" y="685">5</text>
+  <circle cx="530" cy="274" r="12" fill="#5B7A0F"/><text x="530" y="279">A</text>
+  <circle cx="617" cy="320" r="12" fill="#5B7A0F"/><text x="617" y="325">B</text>
+  <circle cx="760" cy="945" r="12" fill="#C25E00"/><text x="760" y="950">C</text>
+</g>
+
+<!-- ===================== legenda ===================== -->
+<g font-size="13" fill="#232F3E">
+  <g font-weight="bold" text-anchor="middle" fill="#FFFFFF">
+    <circle cx="42" cy="1035" r="11" fill="#232F3E"/><text x="42" y="1040">1</text>
+    <circle cx="42" cy="1065" r="11" fill="#232F3E"/><text x="42" y="1070">2</text>
+    <circle cx="42" cy="1095" r="11" fill="#ED7100"/><text x="42" y="1100">3</text>
+    <circle cx="42" cy="1125" r="11" fill="#232F3E"/><text x="42" y="1130">4</text>
+    <circle cx="42" cy="1155" r="11" fill="#01A88D"/><text x="42" y="1160">5</text>
+    <circle cx="722" cy="1035" r="11" fill="#5B7A0F"/><text x="722" y="1040">A</text>
+    <circle cx="722" cy="1065" r="11" fill="#5B7A0F"/><text x="722" y="1070">B</text>
+    <circle cx="722" cy="1095" r="11" fill="#C25E00"/><text x="722" y="1100">C</text>
+  </g>
+  <text x="62" y="1040">O usuário digita a pergunta no chat da aplicação Streamlit.</text>
+  <text x="62" y="1070">A função ask chama o retrieve da Knowledge Base com a pergunta.</text>
+  <text x="62" y="1100">A busca devolve os trechos mais relevantes, com score e página.</text>
+  <text x="62" y="1130">O app monta o prompt (contexto + pergunta) e chama o converse.</text>
+  <text x="62" y="1160">O Nova Micro responde; o chat mostra a resposta e as fontes.</text>
+  <text x="742" y="1040">Os PDFs são enviados ao bucket S3 pelo Console da AWS.</text>
+  <text x="742" y="1070">No sync, a base faz chunking, embeddings e indexação dos trechos.</text>
+  <text x="742" y="1100">No notebook, o Titan gera os vetores estudados com PCA e cosseno.</text>
+  <text x="722" y="1133" font-size="11.5" fill="#545B64">Obs.: a base Bedrock Managed não aceita retrieve_and_generate,</text>
+  <text x="722" y="1149" font-size="11.5" fill="#545B64">por isso o RAG é feito em duas chamadas: retrieve + converse.</text>
+</g>
+</svg>

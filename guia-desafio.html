@@ -1,0 +1,2309 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="description" content="Guia passo a passo do projeto RAG com Amazon Bedrock: usuário IAM, documentos no S3, Knowledge Base managed, embeddings com Titan, RAG com retrieve e converse (Nova Micro), interface Streamlit e limpeza dos recursos.">
+<meta name="color-scheme" content="light dark">
+<title>Projeto RAG Bedrock</title>
+<script>
+  /* Aplica o tema salvo antes da primeira pintura, para nao piscar branco no escuro. */
+  (function () {
+    try {
+      var t = localStorage.getItem("bedrock-rag-tema");
+      if (t === "dark" || t === "light") {
+        document.documentElement.setAttribute("data-theme", t);
+      }
+    } catch (e) {}
+  })();
+</script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@500;600;700&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;family=IBM+Plex+Sans:wght@400;500;600&amp;display=swap">
+
+<style>
+  :root {
+    --bg:        #E9EDEF;
+    --surface:   #FFFFFF;
+    --surface-2: #F3F6F7;
+    --ink:       #0E1619;
+    --ink-2:     #44555C;
+    --ink-3:     #6F8188;
+    --line:      #D3DBDE;
+    --line-2:    #E4EAEC;
+    --accent:    #0A6A72;
+    --accent-2:  #08535A;
+    --accent-soft:#DBECED;
+    --warn:      #A05712;
+    --warn-soft: #FAEDDC;
+    --ok:        #1E6F45;
+    --ok-soft:   #DEF0E6;
+    --stop:      #A13327;
+    --stop-soft: #FAE3E0;
+    --term-bg:   #0D1619;
+    --term-line: #1E2E34;
+    --term-ink:  #D6E3E7;
+    --term-dim:  #7C949B;
+    --shadow:    0 1px 2px rgba(14,22,25,.05), 0 8px 24px -16px rgba(14,22,25,.28);
+    --radius: 10px;
+    --maxw: 1180px;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg:        #0B1214;
+      --surface:   #121B1E;
+      --surface-2: #162126;
+      --ink:       #E7EFF1;
+      --ink-2:     #A8BBC1;
+      --ink-3:     #7C9199;
+      --line:      #24343A;
+      --line-2:    #1C282D;
+      --accent:    #5AC6CE;
+      --accent-2:  #8BDBE1;
+      --accent-soft:#10333A;
+      --warn:      #E2A75E;
+      --warn-soft: #2C2216;
+      --ok:        #6FCB95;
+      --ok-soft:   #13291D;
+      --stop:      #EA8B7D;
+      --stop-soft: #2E1A17;
+      --term-bg:   #08100F;
+      --term-line: #1B2A2F;
+      --shadow:    0 1px 2px rgba(0,0,0,.4), 0 10px 28px -18px rgba(0,0,0,.8);
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --bg:        #0B1214;
+    --surface:   #121B1E;
+    --surface-2: #162126;
+    --ink:       #E7EFF1;
+    --ink-2:     #A8BBC1;
+    --ink-3:     #7C9199;
+    --line:      #24343A;
+    --line-2:    #1C282D;
+    --accent:    #5AC6CE;
+    --accent-2:  #8BDBE1;
+    --accent-soft:#10333A;
+    --warn:      #E2A75E;
+    --warn-soft: #2C2216;
+    --ok:        #6FCB95;
+    --ok-soft:   #13291D;
+    --stop:      #EA8B7D;
+    --stop-soft: #2E1A17;
+    --term-bg:   #08100F;
+    --term-line: #1B2A2F;
+    --shadow:    0 1px 2px rgba(0,0,0,.4), 0 10px 28px -18px rgba(0,0,0,.8);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  h1, h2, h3, h4 {
+    font-family: "Archivo", ui-sans-serif, system-ui, sans-serif;
+    text-wrap: balance;
+    margin: 0;
+    letter-spacing: -0.015em;
+  }
+
+  code, kbd, pre, .mono { font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, monospace; }
+
+  a { color: var(--accent); text-decoration-thickness: 1px; text-underline-offset: 2px; }
+  a:focus-visible, button:focus-visible, input:focus-visible, summary:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px;
+  }
+
+  /* ---------- barra superior ---------- */
+  .topbar {
+    position: sticky; top: 0; z-index: 40;
+    background: color-mix(in srgb, var(--surface) 90%, transparent);
+    backdrop-filter: blur(8px);
+    border-bottom: 1px solid var(--line);
+  }
+  .topbar-in {
+    max-width: var(--maxw); margin: 0 auto; padding: 10px 24px;
+    display: flex; align-items: center; gap: 18px; flex-wrap: wrap;
+  }
+  .topbar-id { display: flex; align-items: baseline; gap: 10px; margin-right: auto; }
+  .topbar-id strong { font-family: "Archivo", sans-serif; font-size: 15px; font-weight: 700; }
+  .topbar-id span { font-size: 12px; color: var(--ink-3); font-family: "IBM Plex Mono", monospace; }
+
+  .prog { display: flex; align-items: center; gap: 10px; }
+  .prog-track { width: 190px; height: 6px; border-radius: 99px; background: var(--line); overflow: hidden; }
+  .prog-fill { height: 100%; width: 0%; background: var(--accent); transition: width .25s ease; }
+  .prog-num {
+    font-family: "IBM Plex Mono", monospace; font-size: 12px; font-weight: 500;
+    color: var(--ink-2); font-variant-numeric: tabular-nums; min-width: 78px;
+  }
+  .btn-ghost {
+    font-family: "IBM Plex Mono", monospace; font-size: 11px; letter-spacing: .04em;
+    text-transform: uppercase; color: var(--ink-3); background: none;
+    border: 1px solid var(--line); border-radius: 6px; padding: 5px 9px; cursor: pointer;
+  }
+  .btn-ghost:hover { color: var(--ink); border-color: var(--ink-3); }
+
+  /* ---------- estrutura ---------- */
+  .shell { max-width: var(--maxw); margin: 0 auto; padding: 0 24px 96px; display: grid; gap: 40px; grid-template-columns: 218px minmax(0,1fr); }
+  @media (max-width: 940px) { .shell { grid-template-columns: minmax(0, 1fr); gap: 0; } }
+
+  nav.toc { position: sticky; top: 72px; align-self: start; padding: 32px 0; max-height: calc(100vh - 90px); overflow-y: auto; }
+  @media (max-width: 940px) { nav.toc { display: none; } }
+  .toc-label { font-family: "IBM Plex Mono", monospace; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 12px; }
+  .toc a {
+    display: flex; gap: 9px; align-items: baseline; padding: 5px 0;
+    color: var(--ink-2); text-decoration: none; font-size: 13.5px; line-height: 1.35;
+    border-left: 2px solid transparent; padding-left: 10px; margin-left: -12px;
+  }
+  .toc a b { font-family: "IBM Plex Mono", monospace; font-size: 11px; color: var(--ink-3); font-weight: 500; }
+  .toc a:hover { color: var(--ink); }
+  .toc a.on { color: var(--accent); border-left-color: var(--accent); font-weight: 500; }
+  .toc a.on b { color: var(--accent); }
+  .toc a.done b::after { content: "✓"; margin-left: 4px; color: var(--ok); }
+
+  main { padding: 32px 0 0; min-width: 0; }
+
+  /* ---------- abertura ---------- */
+  .hero { padding: 26px 0 34px; border-bottom: 1px solid var(--line); margin-bottom: 40px; }
+  .eyebrow {
+    font-family: "IBM Plex Mono", monospace; font-size: 11px; letter-spacing: .16em;
+    text-transform: uppercase; color: var(--accent); margin-bottom: 14px;
+  }
+  h1 { font-size: clamp(30px, 4.4vw, 44px); line-height: 1.08; font-weight: 700; }
+  .lede { font-size: 17px; color: var(--ink-2); max-width: 64ch; margin-top: 16px; }
+  .facts { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 22px; }
+  .fact {
+    font-family: "IBM Plex Mono", monospace; font-size: 11.5px; color: var(--ink-2);
+    background: var(--surface); border: 1px solid var(--line); border-radius: 6px; padding: 5px 9px;
+  }
+  .fact b { color: var(--ink-3); font-weight: 500; }
+
+  /* ---------- fases ---------- */
+  .phase { margin: 0 0 60px; scroll-margin-top: 76px; }
+  .phase-head { display: flex; gap: 16px; align-items: flex-start; margin-bottom: 18px; }
+  .phase-n {
+    font-family: "IBM Plex Mono", monospace; font-size: 12px; font-weight: 600;
+    color: var(--accent); background: var(--accent-soft); border-radius: 6px;
+    padding: 6px 9px; line-height: 1; margin-top: 5px; white-space: nowrap;
+  }
+  .phase-head h2 { font-size: clamp(21px, 2.6vw, 27px); font-weight: 600; }
+  .phase-head p { margin: 6px 0 0; color: var(--ink-2); font-size: 15px; max-width: 68ch; }
+  .phase-count {
+    margin-left: auto; font-family: "IBM Plex Mono", monospace; font-size: 11px;
+    color: var(--ink-3); white-space: nowrap; padding-top: 9px; font-variant-numeric: tabular-nums;
+  }
+  .phase-count.full { color: var(--ok); }
+
+  /* ---------- passo ---------- */
+  .step {
+    background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius);
+    padding: 20px 22px; margin-bottom: 14px; box-shadow: var(--shadow); scroll-margin-top: 76px;
+  }
+  .step-top { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; margin-bottom: 4px; }
+  .step-id {
+    font-family: "IBM Plex Mono", monospace; font-size: 12px; font-weight: 600;
+    color: var(--ink-3); font-variant-numeric: tabular-nums;
+    text-decoration: none; transition: color .12s;
+  }
+  a.step-id:hover, a.step-id:focus-visible { color: var(--accent); }
+  .step h3 { font-size: 17px; font-weight: 600; }
+  .where {
+    font-family: "IBM Plex Mono", monospace; font-size: 10px; letter-spacing: .07em;
+    text-transform: uppercase; padding: 3px 7px; border-radius: 4px; margin-left: auto; white-space: nowrap;
+  }
+  .w-wsl { background: var(--accent-soft); color: var(--accent); }
+  .w-console { background: var(--warn-soft); color: var(--warn); }
+  .w-web { background: var(--surface-2); color: var(--ink-2); border: 1px solid var(--line); }
+  .w-ssm { background: var(--ok-soft); color: var(--ok); }
+  .w-kiro { background: var(--stop-soft); color: var(--stop); }
+  .why { margin: 10px 0 0; padding: 10px 14px; border-left: 3px solid var(--accent); background: var(--surface-2); border-radius: 0 8px 8px 0; font-size: 14.5px; color: var(--ink-2); max-width: 78ch; }
+  .why > b { color: var(--accent); font-family: "Archivo", sans-serif; margin-right: 6px; }
+  .stage { margin: 8px 0 36px; padding: 18px 22px; border-radius: var(--radius); background: var(--accent-soft); border: 1px solid color-mix(in srgb, var(--accent) 30%, transparent); scroll-margin-top: 76px; }
+  .stage > span { display: block; font-family: "IBM Plex Mono", monospace; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); }
+  .stage > b { display: block; font-family: "Archivo", sans-serif; font-size: clamp(20px, 2.4vw, 25px); margin-top: 4px; }
+  .stage > p { margin: 6px 0 0; color: var(--ink-2); font-size: 15px; max-width: 72ch; }
+  .arch { margin: -20px 0 36px; }
+  .arch-cap { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-3); padding: 14px 20px 0; }
+  .arch pre { padding-top: 10px; }
+  .arch .d-done { color: var(--ok); }
+  .arch .d-now { color: var(--warn); font-weight: 600; }
+  .arch pre.arch-ch { border-top: 1px dashed var(--line); font-size: 12.5px; line-height: 1.55; }
+  .arch .d-todo { color: var(--ink-3); opacity: .5; }
+  .arch-leg { display: flex; flex-wrap: wrap; gap: 8px 18px; padding: 0 20px 14px; font-family: "IBM Plex Mono", monospace; font-size: 11.5px; }
+  .recap { margin: 34px 0 0; padding: 18px 0 0; border-top: 2px solid var(--accent); }
+  .recap-head { font-family: "IBM Plex Mono", monospace; font-size: 11px; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); }
+  .recap, .recap .arch { min-width: 0; max-width: 100%; }
+  .recap .arch { margin: 10px 0 0; }
+  .recap .arch pre { font-size: 11.5px; line-height: 1.45; }
+  .arch .d-next { color: var(--accent); font-weight: 600; background: var(--accent-soft); text-decoration: underline dashed; text-underline-offset: 3px; }
+  .arch-leg .d-next { text-decoration: none; padding: 0 4px; }
+  .recap-txt { display: grid; grid-template-columns: max-content 1fr; gap: 6px 16px; margin: 14px 0 0; font-size: 14.5px; max-width: 86ch; }
+  .recap-txt dt { font-family: "Archivo", sans-serif; font-weight: 600; color: var(--ink); }
+  .recap-txt dd { margin: 0; color: var(--ink-2); }
+  .recap-passos, .recap-termos { margin: 0; padding-left: 1.35em; }
+  .recap-passos li + li, .recap-termos li + li { margin-top: 4px; }
+  .recap-passos li::marker { color: var(--ink-3); font-weight: 600; }
+  .recap-termos b { color: var(--ink); font-weight: 600; }
+  .recap-next { margin: 12px 0 0; font-size: 14.5px; }
+  .recap-next b { font-family: "Archivo", sans-serif; color: var(--accent); margin-right: 6px; }
+  @media (max-width: 640px) { .recap-txt { grid-template-columns: 1fr; gap: 2px; } .recap-txt dd { margin-bottom: 8px; } .recap-passos, .recap-termos { padding-left: 1.15em; } }
+  .arch-leg .d-now { padding: 0 4px; }  .toc-group { font-family: "IBM Plex Mono", monospace; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--accent); margin: 16px 0 4px; }
+  /* ---------- mapa de arquitetura (SVG) ---------- */
+  .arch-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+  .arch-svg { position: relative; margin: 12px 20px 14px; background: #fff; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .arch-svg svg { display: block; width: 100%; height: auto; }
+  .arch-svg [data-k] { transition: opacity .2s; }
+  .arch-svg .d-todo { opacity: .16; }
+  .arch-svg text.d-todo tspan.d-todo { fill-opacity: 1; }
+  .arch-svg tspan.d-todo { fill-opacity: .35; }
+  .arch-svg .d-next { filter: url(#arch-next); }
+  .arch-svg .d-now { filter: url(#arch-now); }
+  .arch-svg .d-now, .arch-svg .d-next { text-decoration: none; background: none; }
+  .arch-svg text.d-now:not([fill="#fff"]), .arch-svg tspan.d-now { fill: #B45309; font-weight: bold; }
+  .arch-svg text.d-next:not([fill="#fff"]), .arch-svg tspan.d-next { fill: #0A6A72; font-weight: bold; }
+  .arch-svg rect.d-now[fill="none"], .arch-svg rect.d-now[fill="#fff"] { stroke: #FF8A00; stroke-width: 4; }
+  .arch-svg rect.d-next[fill="none"], .arch-svg rect.d-next[fill="#fff"] { stroke: #0A8A94; stroke-width: 3; stroke-dasharray: 8 5; }
+  .arch-svg rect.d-now[data-k="vpc"], .arch-svg rect.d-now[data-k="dbsubnet"] { stroke-width: 2; }
+  .arch-svg rect.d-next[data-k="vpc"], .arch-svg rect.d-next[data-k="dbsubnet"] { stroke-width: 2; }
+  .arch-svg text.d-done:not([fill="#fff"]), .arch-svg tspan.d-done { fill: #1A6340; }
+  .arch-svg rect.d-done[data-k="tools"], .arch-svg rect.d-done[data-k="cluster"][fill="none"], .arch-svg rect.d-done[data-k="cluster"][fill="#fff"] { stroke: #2E9E5B; stroke-width: 2.5; }
+  .arch-svg rect.d-done[data-k="service"][fill="#FDF3EA"] { fill: #fff; stroke: #2E9E5B; stroke-width: 1.5; }
+  .arch-svg .arch-hl { pointer-events: none; }
+  .arch-zoom { position: absolute; top: 8px; right: 8px; font: 500 11px "IBM Plex Mono", monospace; letter-spacing: .04em; color: #0E1619; background: rgba(255,255,255,.92); border: 1px solid #C9D3D6; border-radius: 6px; padding: 4px 9px; cursor: zoom-in; }
+  .arch-zoom:hover, .arch-zoom:focus-visible { border-color: #0A6A72; color: #0A6A72; }
+  .arch-leg .d-done { color: #155232; background: #DEF0E6; border-radius: 3px; padding: 0 4px; }
+  .arch-leg .d-done::before { content: ""; display: inline-block; width: 12px; height: 12px; margin-right: 5px; vertical-align: -1px; background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='-12 -12 24 24'%3E%3Ccircle r='11' fill='%2323864C'/%3E%3Cpath d='M-5,0.5 L-1.5,4 L5,-3.5' fill='none' stroke='%23fff' stroke-width='2.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E") no-repeat center / contain; }
+  .arch-leg .d-now { color: #B45309; background: #FFE7C7; border-radius: 3px; }
+  .arch-leg .d-next { color: #0A6A72; background: #DBECED; border-radius: 3px; }
+  :root[data-theme="dark"] .arch-leg .d-done { color: #6FCB95; background: #13291D; }
+  :root[data-theme="dark"] .arch-leg .d-now { color: #F4B266; background: #3A2812; }
+  :root[data-theme="dark"] .arch-leg .d-next { color: #8BDBE1; background: #10333A; }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) .arch-leg .d-done { color: #6FCB95; background: #13291D; }
+    :root:not([data-theme="light"]) .arch-leg .d-now { color: #F4B266; background: #3A2812; }
+    :root:not([data-theme="light"]) .arch-leg .d-next { color: #8BDBE1; background: #10333A; }
+  }
+  .arch-dlg { width: min(96vw, 1800px); max-height: 94vh; padding: 0; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+  .arch-dlg::backdrop { background: rgba(8,16,18,.72); }
+  .arch-dlg .arch-dlg-bar { position: sticky; top: 0; display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 8px 12px; background: #F3F6F7; border-bottom: 1px solid #D3DBDE; font: 500 12px "IBM Plex Mono", monospace; color: #44555C; z-index: 1; }
+  .arch-dlg button { font: inherit; border: 1px solid #C9D3D6; background: #fff; border-radius: 6px; padding: 4px 10px; cursor: pointer; color: #0E1619; }
+  .arch-dlg .arch-dlg-body { overflow: auto; }
+  .arch-dlg .arch-dlg-body svg { display: block; width: 1728px; max-width: none; height: auto; }
+  @media (max-width: 640px) { .arch-svg { margin: 10px 12px 12px; } .arch-zoom { top: auto; bottom: 6px; right: 6px; font-size: 10px; padding: 2px 6px; } }
+  .arch-dlg .arch-leg { padding: 0; }
+  /* estado "removido" do mapa v3 (Preparatório · Desafio 2) */
+  .arch-svg .d-gone { opacity: .45; }
+  .arch-svg rect.d-gone { stroke: #A13327; stroke-dasharray: 6 4; }
+  .arch-svg text.d-gone:not([fill="#fff"]) { fill: #A13327; text-decoration: line-through; }
+  .arch-leg .d-gone { color: #A13327; text-decoration: line-through; padding: 0 4px; }
+  /* ---------- diagramas fixos (SVG feito a mao) ---------- */
+  .diag { margin: 16px 0 0; }
+  .diag-cap { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2); padding: 0 0 8px; }
+  .diag-svg { background: #fff; border: 1px solid var(--line); border-radius: 8px; overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .diag-svg svg { display: block; width: 100%; height: auto; }
+  .diag-1 svg { min-width: 900px; }
+  .diag-2 svg { min-width: 720px; }
+  .step > p { color: var(--ink-2); font-size: 14.5px; margin: 8px 0 0; max-width: 72ch; }
+
+  /* ---------- comandos ---------- */
+  .cmd { position: relative; margin: 14px 0 0; }
+  .cmd-label, .out-label {
+    font-family: "IBM Plex Mono", monospace; font-size: 10px; letter-spacing: .1em;
+    text-transform: uppercase; color: var(--ink-3); margin-bottom: 6px; display: block;
+  }
+  pre {
+    margin: 0; padding: 14px 16px; border-radius: 8px; overflow-x: auto;
+    font-size: 13px; line-height: 1.62; tab-size: 2;
+  }
+  .cmd pre { background: var(--term-bg); color: var(--term-ink); border: 1px solid var(--term-line); }
+  .cmd pre .p { color: #6FCB95; user-select: none; }
+  .cmd pre .c { color: var(--term-dim); }
+  .copy {
+    position: absolute; top: 22px; right: 8px; font-family: "IBM Plex Mono", monospace;
+    font-size: 10px; letter-spacing: .06em; text-transform: uppercase;
+    background: rgba(255,255,255,.07); color: #9FB6BC; border: 1px solid rgba(255,255,255,.13);
+    border-radius: 5px; padding: 4px 8px; cursor: pointer; opacity: 0; transition: opacity .15s;
+  }
+  .cmd:hover .copy, .copy:focus-visible { opacity: 1; }
+  .copy.ok { color: #6FCB95; border-color: #6FCB95; opacity: 1; }
+  .out { margin-top: 14px; }
+  .out pre {
+    background: var(--surface-2); color: var(--ink-2);
+    border: 1px solid var(--line-2); border-left: 3px solid var(--ink-3);
+  }
+  .out.good pre { border-left-color: var(--ok); }
+  .out.bad pre { border-left-color: var(--stop); }
+  .out.clicks pre { border-left-color: var(--warn); color: var(--ink); }
+  p code, li code, td code {
+    background: var(--surface-2); border: 1px solid var(--line-2); border-radius: 4px;
+    padding: 1px 5px; font-size: .875em; color: var(--ink);
+  }
+
+  /* ---------- instrucoes de interface: Console da AWS, Docker Desktop, GitHub, navegador ---------- */
+  .console { margin: 14px 0 0; border: 1px solid var(--line); border-left: 4px solid var(--warn); border-radius: 8px; background: var(--surface); overflow: hidden; }
+  .console.c-web { border-left-color: var(--ink-2); }
+  .console-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 0; padding: 8px 14px; background: var(--warn-soft); color: var(--ink); font-size: 13px; border-bottom: 1px solid var(--line-2); }
+  .console.c-web .console-head { background: var(--surface-2); }
+  .console-head b { font-family: "IBM Plex Mono", monospace; font-size: 11px; font-weight: 600; letter-spacing: .1em; text-transform: uppercase; }
+  .console-head > * + *::before { content: "·"; margin: 0 9px; font-weight: 400; }
+  .console-path { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 0; padding: 12px 14px 2px; font-size: 14px; color: var(--ink); }
+  .console-path > i { font-style: normal; margin: 0 7px; color: var(--ink-2); }
+  .console-lbl, .console-n { font-family: "IBM Plex Mono", monospace; font-size: 10.5px; font-weight: 500; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-2); }
+  .console-lbl { margin-right: 10px; }
+  .ui { font-weight: 600; color: var(--ink); background: var(--surface-2); border: 1px solid var(--line); border-radius: 4px; padding: 0 5px; overflow-wrap: anywhere; }
+  .ui-btn { display: inline-block; font-family: "IBM Plex Sans", sans-serif; font-size: 13px; font-weight: 600; line-height: 1.5; color: var(--ink); background: var(--surface); border: 1px solid var(--ink-2); border-bottom-width: 2px; border-radius: 6px; padding: 0 10px; white-space: nowrap; }
+  .console-tela { padding: 12px 14px 14px; }
+  .console-path + .console-tela, .console-tela + .console-tela { border-top: 1px dashed var(--line); }
+  .console-path + .console-tela { margin-top: 10px; }
+  .console-tela > h4 { font-family: "IBM Plex Sans", sans-serif; font-size: 14.5px; font-weight: 600; letter-spacing: 0; color: var(--ink); display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 10px; }
+  .console-tela > p { margin: 8px 0 0; font-size: 14px; color: var(--ink-2); }
+  .acao { font-weight: 600; color: var(--ink); }
+  table.console-campos { min-width: 0; width: 100%; margin-top: 8px; font-size: 14px; border: 1px solid var(--line-2); border-radius: 6px; border-collapse: separate; border-spacing: 0; overflow: hidden; }
+  .console-campos th { color: var(--ink-2); padding: 7px 10px; border-bottom: 1px solid var(--line-2); }
+  .console-campos td { padding: 8px 10px; color: var(--ink-2); }
+  .console-campos td:first-child { min-width: 0; width: 38%; font-weight: 600; color: var(--ink); overflow-wrap: anywhere; }
+  .console-campos td:nth-child(2) { width: 31%; color: var(--ink); }
+  .console-campos td.pt { font-weight: 400; font-style: italic; color: var(--ink-2); }
+  .console-campos td code { overflow-wrap: anywhere; }
+  .console-campos .opc { font-weight: 400; font-style: italic; color: var(--ink-2); }
+  p.console-fim { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 8px; margin: 10px 0 0; padding: 7px 10px; background: var(--surface-2); border-radius: 6px; font-size: 14px; color: var(--ink); }
+  p.console-fim::before { content: "→"; font-weight: 600; color: var(--ink); }
+  @media (max-width: 640px) {
+    .console-head, .console-path, .console-tela { padding-left: 12px; padding-right: 12px; }
+    table.console-campos, .console-campos tbody, .console-campos tr, .console-campos td { display: block; width: auto !important; }
+    table.console-campos { border: 0; }
+    .console-campos thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); }
+    .console-campos tr { border: 1px solid var(--line-2); border-radius: 6px; padding: 6px 10px 8px; margin-top: 8px; background: var(--surface); }
+    .console-campos td, .console-campos tbody tr:last-child td { border: 0; padding: 3px 0 0; }
+    .console-campos td:empty { display: none; }
+    .console-campos td::before { display: block; font-family: "IBM Plex Mono", monospace; font-size: 10px; font-weight: 500; font-style: normal; letter-spacing: .08em; text-transform: uppercase; color: var(--ink-2); }
+    .console-campos td:nth-child(1) { padding-top: 0; }
+    .console-campos td:nth-child(1)::before { content: none; }
+    .console-campos td:nth-child(2)::before { content: "O que fazer"; }
+    .console-campos td:nth-child(3)::before { content: "Para quê"; }
+  }
+  .mapa-h { font-size: 17px; font-weight: 600; margin: 30px 0 0; scroll-margin-top: 76px; }
+  .mapa-h + p, .mapa-h + ul { margin: 8px 0 0; color: var(--ink-2); font-size: 15px; max-width: 78ch; }
+  .mapa-lista { padding-left: 1.2em; }
+  .mapa-lista li + li { margin-top: 4px; }
+
+  /* ---------- checklist ---------- */
+  .check { margin: 16px 0 0; padding: 14px 16px; background: var(--surface-2); border-radius: 8px; border: 1px solid var(--line-2); }
+  .check-label { font-family: "IBM Plex Mono", monospace; font-size: 10px; letter-spacing: .1em; text-transform: uppercase; color: var(--ink-3); margin-bottom: 8px; }
+  .check ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 7px; }
+  .check li label { display: flex; gap: 10px; align-items: flex-start; cursor: pointer; }
+  .check input[type=checkbox] {
+    appearance: none; -webkit-appearance: none; flex: 0 0 auto;
+    width: 17px; height: 17px; margin: 3px 0 0; border: 1.5px solid var(--ink-3);
+    border-radius: 4px; background: var(--surface); cursor: pointer; position: relative; transition: .12s;
+  }
+  .check input[type=checkbox]:hover { border-color: var(--accent); }
+  .check input[type=checkbox]:checked { background: var(--accent); border-color: var(--accent); }
+  .check input[type=checkbox]:checked::after {
+    content: ""; position: absolute; left: 5px; top: 1.5px; width: 4px; height: 9px;
+    border: solid var(--surface); border-width: 0 2px 2px 0; transform: rotate(43deg);
+  }
+  .check label span { font-size: 14.5px; color: var(--ink-2); line-height: 1.45; }
+  .check input:checked + span { color: var(--ink-3); text-decoration: line-through; text-decoration-color: var(--line); }
+
+  /* ---------- avisos ---------- */
+  .note { border-radius: 8px; padding: 13px 16px; margin: 14px 0 0; font-size: 14.5px; border: 1px solid; }
+  .note > b { display: block; font-family: "Archivo", sans-serif; font-size: 13px; letter-spacing: .01em; margin-bottom: 3px; }
+  .note p { margin: 0; }
+  .note p + p { margin-top: 7px; }
+  .note ul, .note ol { margin: 6px 0 7px; padding-left: 20px; }
+  .note li + li { margin-top: 3px; }
+  .note pre { margin: 8px 0; background: var(--term-bg); color: var(--term-ink); border: 1px solid var(--term-line); }
+  .n-warn { background: var(--warn-soft); border-color: color-mix(in srgb, var(--warn) 35%, transparent); color: var(--ink); }
+  .n-warn > b { color: var(--warn); }
+  .n-tip  { background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 32%, transparent); color: var(--ink); }
+  .n-tip > b { color: var(--accent); }
+  .n-key  { background: var(--stop-soft); border-color: color-mix(in srgb, var(--stop) 32%, transparent); color: var(--ink); }
+  .n-key > b { color: var(--stop); }
+
+  details.fallback { margin-top: 14px; border: 1px dashed var(--line); border-radius: 8px; padding: 0 14px; background: var(--surface-2); }
+  details.fallback summary { cursor: pointer; padding: 11px 0; font-size: 14px; font-weight: 500; color: var(--ink-2); }
+  details.fallback[open] summary { border-bottom: 1px solid var(--line-2); margin-bottom: 12px; }
+  details.fallback > *:last-child { margin-bottom: 14px; }
+
+  /* ---------- tabelas ---------- */
+  .tablewrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); margin-top: 16px; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; min-width: 520px; }
+  th, td { text-align: left; padding: 11px 14px; border-bottom: 1px solid var(--line-2); vertical-align: top; }
+  th {
+    font-family: "IBM Plex Mono", monospace; font-size: 10.5px; letter-spacing: .08em;
+    text-transform: uppercase; color: var(--ink-3); font-weight: 500; background: var(--surface-2);
+  }
+  td:first-child { min-width: 150px; }
+  tbody tr:last-child td { border-bottom: none; }
+
+  .ascii { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); margin-top: 16px; }
+  .ascii pre { background: none; color: var(--ink-2); font-size: 12px; line-height: 1.5; padding: 20px; }
+
+  footer { max-width: var(--maxw); margin: 0 auto; padding: 28px 24px 60px; border-top: 1px solid var(--line); color: var(--ink-3); font-size: 13px; }
+  footer p { margin: 0 0 6px; }
+
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+  @media (max-width: 620px) {
+    .shell, .topbar-in, footer { padding-left: 16px; padding-right: 16px; }
+    .step { padding: 16px; }
+    .where { margin-left: 0; }
+    .prog-track { width: 110px; }
+    td:first-child { white-space: normal; }
+  }
+  /* ---------- impressao ---------- */
+  @media print {
+    :root, :root[data-theme="dark"], :root[data-theme="light"] {
+      --bg: #FFFFFF; --surface: #FFFFFF; --surface-2: #F5F7F8;
+      --ink: #000000; --ink-2: #263338; --ink-3: #55666C;
+      --line: #B9C4C8; --line-2: #DDE4E6;
+      --accent: #0A6A72; --accent-2: #08535A; --accent-soft: #EDF4F5;
+      --warn: #7A430E; --warn-soft: #FBF3E9; --ok: #165634; --ok-soft: #EDF6F1;
+      --stop: #7D2820; --stop-soft: #FBEEEC;
+      --term-bg: #F2F5F6; --term-line: #C8D2D5; --term-ink: #0E1619; --term-dim: #55666C;
+      --shadow: none;
+    }
+    .topbar, nav.toc, .copy, #tema, #reset { display: none !important; }
+    .shell { display: block; max-width: none; padding: 0; }
+    body { background: #fff; }
+    .step, .cmd, .out, .console, .note, .check, .ascii, .tablewrap, details {
+      break-inside: avoid; page-break-inside: avoid;
+    }
+    h2, h3, .step-top, .phase-head { break-after: avoid; page-break-after: avoid; }
+    .phase { margin-bottom: 24px; }
+    .step { box-shadow: none; border-color: #B9C4C8; }
+    pre { white-space: pre-wrap; word-wrap: break-word; }
+    a { color: inherit; text-decoration: none; }
+  }
+
+  /* ---------- mapa por fase (Dia 1) ---------- */
+  .fase-map { margin: 0 0 18px; }
+  .arch-svg rect.d-now[data-k] { stroke: #FF8A00; stroke-width: 3.5; }
+  .arch-svg rect.d-next[data-k] { stroke: #0A8A94; stroke-width: 2.5; stroke-dasharray: 8 5; }
+  .arch-svg rect.d-done[data-k] { stroke: #2E9E5B; }
+  .arch-svg rect.d-gone[data-k] { stroke: #A13327; stroke-dasharray: 6 4; }
+  /* brilho so nos icones e setas: em conteineres grandes e em textos ele borra o desenho */
+  .arch-svg rect[data-k].d-now, .arch-svg rect[data-k].d-next, .arch-svg text.d-now, .arch-svg text.d-next { filter: none; }
+</style>
+</head>
+<body>
+<svg class="arch-defs" width="0" height="0" aria-hidden="true" focusable="false"><defs><marker id="m0F6BA0" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#0F6BA0"/></marker><marker id="mC7106A" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#C7106A"/></marker><marker id="mB04F00" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#B04F00"/></marker><marker id="mA21CAF" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#A21CAF"/></marker><marker id="m545B64" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#545B64"/></marker><marker id="m3F6B0C" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#3F6B0C"/></marker><marker id="m3334B9" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#3334B9"/></marker><marker id="m7D8998" viewBox="0 0 10 10" refX="10" refY="5" markerWidth="10" markerHeight="10" markerUnits="userSpaceOnUse" orient="auto"><path d="M0,0 L10,5 L0,10 z" fill="#7D8998"/></marker><filter id="arch-now" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB"><feMorphology in="SourceAlpha" operator="dilate" radius="6" result="d"/><feFlood flood-color="#FF8A00"/><feComposite in2="d" operator="in" result="c"/><feGaussianBlur in="c" stdDeviation="5" result="g"/><feMerge><feMergeNode in="g"/><feMergeNode in="g"/><feMergeNode in="SourceGraphic"/></feMerge></filter><filter id="arch-next" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB"><feMorphology in="SourceAlpha" operator="dilate" radius="4" result="d"/><feFlood flood-color="#0A8A94"/><feComposite in2="d" operator="in" result="c"/><feGaussianBlur in="c" stdDeviation="4" result="g"/><feMerge><feMergeNode in="g"/><feMergeNode in="SourceGraphic"/></feMerge></filter></defs></svg>
+<template id="arch-svg-tpl"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 1200" role="img" aria-label="Arquitetura do projeto RAG, com o que já foi feito, a fase atual e o que vem depois" font-family="Arial, Helvetica, sans-serif">
+<defs>
+  <marker id="tDark" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#232F3E"/></marker>
+  <marker id="tTeal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#017E6B"/></marker>
+  <marker id="tGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5B7A0F"/></marker>
+  <marker id="tOrange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#C25E00"/></marker>
+  <marker id="tRed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#DD344C"/></marker>
+</defs>
+<rect x="0" y="0" width="1400" height="1200" fill="#FFFFFF"/>
+
+<!-- título (sempre visível) -->
+<text x="700" y="36" font-size="20" font-weight="bold" fill="#232F3E" text-anchor="middle">Assistente IA Expert Academy · RAG com Amazon Bedrock</text>
+<text x="700" y="60" font-size="13.5" fill="#545B64" text-anchor="middle">PDF → S3 → Knowledge Base (chunking, embeddings, busca semântica) → Nova Micro → resposta com fontes</text>
+
+<!-- computador local (sempre visível) -->
+<rect x="20" y="90" width="345" height="910" fill="none" stroke="#6B737C" stroke-width="2" stroke-dasharray="8,5"/>
+<rect x="20" y="90" width="150" height="30" fill="#6B737C"/>
+<text x="95" y="110" font-size="13" font-weight="bold" fill="#fff" text-anchor="middle">Computador local</text>
+
+<!-- usuário -->
+<svg data-k="usuario" x="172" y="122" width="40" height="46" viewBox="172 122 40 46"><circle cx="192" cy="138" r="9" fill="none" stroke="#232F3E" stroke-width="2.5"/><path d="M176,166 C176,150 208,150 208,166" fill="none" stroke="#232F3E" stroke-width="2.5"/></svg>
+<text data-k="usuario" x="192" y="190" font-size="14" font-weight="bold" fill="#232F3E" text-anchor="middle">Usuário (navegador)</text>
+<text data-k="usuario" x="192" y="206" font-size="12" fill="#545B64" text-anchor="middle">http://localhost:8501</text>
+
+<!-- aplicação Streamlit -->
+<rect data-k="app" x="40" y="255" width="305" height="480" rx="6" fill="#fff" stroke="#FF4B4B" stroke-width="2.2"/>
+<svg data-k="app" x="56" y="270" width="44" height="44" viewBox="56 270 44 44"><rect x="56" y="270" width="44" height="44" rx="7" fill="#FF4B4B"/><path d="M66,304 L78,280 L90,304 Z" fill="#FFFFFF"/><path d="M61,304 L69,290 L77,304 Z" fill="#FFD5D5"/></svg>
+<text data-k="app" x="112" y="288" font-size="14.5" font-weight="bold" fill="#232F3E">Aplicação Streamlit</text>
+<text data-k="app" x="112" y="306" font-size="12.5" fill="#545B64" font-family="Consolas, monospace">app.py</text>
+<text data-k="app" x="58" y="342" font-size="12" fill="#232F3E">• Chat: st.chat_input / st.chat_message</text>
+<text data-k="app" x="58" y="362" font-size="12" fill="#232F3E">• Histórico: st.session_state</text>
+<text data-k="app" x="58" y="382" font-size="12" fill="#232F3E">• Clientes AWS: @st.cache_resource</text>
+<text data-k="app" x="58" y="402" font-size="12" fill="#232F3E">• Barra lateral: trechos e temperature</text>
+<text data-k="app" x="58" y="422" font-size="12" fill="#232F3E">• Fontes: st.expander (arquivo, página)</text>
+
+<!-- função ask -->
+<rect data-k="ask" x="58" y="440" width="270" height="275" rx="5" fill="#F2F3F3" stroke="#AAB7B8" stroke-width="1.2"/>
+<text data-k="ask" x="193" y="463" font-size="13" font-weight="bold" fill="#232F3E" text-anchor="middle" font-family="Consolas, monospace">ask(pergunta)</text>
+<text data-k="ask" x="72" y="490" font-size="12" fill="#232F3E">retrieve → trechos do PDF</text>
+<text data-k="ask" x="72" y="545" font-size="12" fill="#232F3E">monta o prompt:</text>
+<text data-k="ask" x="72" y="561" font-size="12" fill="#545B64">"responda só com o contexto"</text>
+<text data-k="ask" x="72" y="577" font-size="12" fill="#545B64">contexto + pergunta</text>
+<text data-k="ask" x="72" y="626" font-size="12" fill="#232F3E">converse → resposta</text>
+<text data-k="ask" x="72" y="700" font-size="12" fill="#232F3E">mostra resposta + fontes</text>
+
+<!-- credenciais -->
+<rect data-k="cred" x="40" y="765" width="305" height="80" rx="5" fill="#FDECEE" stroke="#DD344C" stroke-width="1.5"/>
+<text data-k="cred" x="192" y="790" font-size="12.5" font-weight="bold" fill="#232F3E" text-anchor="middle">Credenciais IAM (fora do código)</text>
+<text data-k="cred" x="192" y="808" font-size="11.5" fill="#232F3E" text-anchor="middle" font-family="Consolas, monospace">curso_bedrock_accessKeys.csv</text>
+<text data-k="cred" x="192" y="826" font-size="11.5" fill="#545B64" text-anchor="middle">lidas por uma única boto3.Session</text>
+
+<!-- notebook -->
+<rect data-k="notebook" x="40" y="870" width="305" height="115" rx="5" fill="#FFF4E8" stroke="#ED7100" stroke-width="1.8"/>
+<text data-k="notebook" x="192" y="895" font-size="13" font-weight="bold" fill="#232F3E" text-anchor="middle">Notebook RAG (estudo)</text>
+<text data-k="notebook" x="192" y="915" font-size="11.5" fill="#232F3E" text-anchor="middle">embeddings → PCA (gráfico 2D)</text>
+<text data-k="notebook" x="192" y="932" font-size="11.5" fill="#232F3E" text-anchor="middle">→ similaridade de cosseno</text>
+<text data-k="notebook" x="192" y="958" font-size="11" fill="#545B64" text-anchor="middle">NumPy · scikit-learn · Matplotlib</text>
+
+<!-- AWS Cloud / Região -->
+<rect x="390" y="90" width="990" height="910" fill="none" stroke="#232F3E" stroke-width="2"/>
+<rect x="390" y="90" width="92" height="30" fill="#232F3E"/>
+<text x="436" y="110" font-size="13" font-weight="bold" fill="#fff" text-anchor="middle">AWS Cloud</text>
+<rect x="410" y="135" width="950" height="845" fill="none" stroke="#00A4A6" stroke-width="2" stroke-dasharray="8,5"/>
+<svg data-k="regiao" x="410" y="135" width="30" height="30" viewBox="410 135 30 30"><rect x="410" y="135" width="30" height="30" fill="#00A4A6"/><path d="M420,159 V141 M420,142 H432 L428,147 L432,152 H420" fill="none" stroke="#FFFFFF" stroke-width="2"/></svg>
+<text data-k="regiao" x="450" y="156" font-size="14" font-weight="bold" fill="#232F3E">Região us-east-1 (N. Virginia)</text>
+
+<!-- Knowledge Base -->
+<rect data-k="kb" x="640" y="180" width="700" height="370" fill="#F2FAF8" stroke="#01A88D" stroke-width="2.5"/>
+<svg data-k="kb" x="640" y="180" width="30" height="30" viewBox="640 180 30 30"><rect x="640" y="180" width="30" height="30" fill="#01A88D"/><path d="M648,188 h14 v14 h-14 z M648,193 h14 M648,198 h14 M653,188 v14" fill="none" stroke="#FFFFFF" stroke-width="1.5"/></svg>
+<text data-k="kb" x="680" y="201" font-size="14.5" font-weight="bold" fill="#232F3E">Amazon Bedrock · Knowledge Base</text>
+<text data-k="kb" x="680" y="222" font-size="12" fill="#545B64">knowledge-base-quick-start-2d1lr (4SCLDZ9ZTH) · tipo Bedrock Managed</text>
+<text data-k="kb" x="680" y="250" font-size="12" font-style="italic" fill="#017E6B">Ingestão: quando a base é sincronizada (sync)</text>
+
+<rect data-k="chunk" x="680" y="262" width="190" height="118" rx="5" fill="#fff" stroke="#8C4FFF" stroke-width="1.8"/>
+<svg data-k="chunk" x="756" y="272" width="38" height="44" viewBox="756 272 38 44"><path d="M760,276 h22 l8,8 v28 h-30 z" fill="#FFFFFF" stroke="#8C4FFF" stroke-width="2"/><path d="M764,290 h22 M764,297 h22 M764,304 h22" stroke="#8C4FFF" stroke-width="1.6" stroke-dasharray="3,2"/></svg>
+<text data-k="chunk" x="775" y="338" font-size="13" font-weight="bold" fill="#232F3E" text-anchor="middle">Chunking</text>
+<text data-k="chunk" x="775" y="356" font-size="11.5" fill="#545B64" text-anchor="middle">divide os PDFs</text>
+<text data-k="chunk" x="775" y="371" font-size="11.5" fill="#545B64" text-anchor="middle">em trechos</text>
+
+<rect data-k="emb" x="900" y="262" width="190" height="118" rx="5" fill="#fff" stroke="#01A88D" stroke-width="1.8"/>
+<svg data-k="emb" x="962" y="274" width="68" height="40" viewBox="962 274 68 40"><g fill="#01A88D"><circle cx="970" cy="284" r="3"/><circle cx="980" cy="284" r="3"/><circle cx="970" cy="294" r="3"/><circle cx="980" cy="294" r="3"/><circle cx="990" cy="294" r="3"/><circle cx="970" cy="304" r="3"/><circle cx="980" cy="304" r="3"/></g><path d="M1000,278 h-4 v32 h4" fill="none" stroke="#01A88D" stroke-width="1.8"/><text x="1004" y="290" font-size="9" fill="#01A88D" font-family="Consolas, monospace">0.23</text><text x="1004" y="302" font-size="9" fill="#01A88D" font-family="Consolas, monospace">-0.11</text></svg>
+<text data-k="emb" x="995" y="338" font-size="13" font-weight="bold" fill="#232F3E" text-anchor="middle">Embeddings</text>
+<text data-k="emb" x="995" y="356" font-size="11.5" fill="#545B64" text-anchor="middle">cada trecho vira um vetor</text>
+<text data-k="emb" x="995" y="371" font-size="11.5" fill="#545B64" text-anchor="middle">(modelo gerenciado)</text>
+
+<rect data-k="vet" x="1120" y="262" width="200" height="118" rx="5" fill="#fff" stroke="#8C4FFF" stroke-width="1.8"/>
+<svg data-k="vet" x="1200" y="272" width="40" height="44" viewBox="1200 272 40 44"><ellipse cx="1220" cy="281" rx="17" ry="5" fill="#FFFFFF" stroke="#8C4FFF" stroke-width="2"/><path d="M1203,281 v24 a17,5 0 0 0 34,0 v-24 M1203,293 a17,5 0 0 0 34,0" fill="none" stroke="#8C4FFF" stroke-width="2"/></svg>
+<text data-k="vet" x="1220" y="338" font-size="13" font-weight="bold" fill="#232F3E" text-anchor="middle">Armazenamento vetorial</text>
+<text data-k="vet" x="1220" y="356" font-size="11.5" fill="#545B64" text-anchor="middle">gerenciado pela AWS</text>
+<text data-k="vet" x="1220" y="371" font-size="11.5" fill="#545B64" text-anchor="middle">(sem banco para administrar)</text>
+
+<line data-k="emb" x1="870" y1="320" x2="898" y2="320" stroke="#017E6B" stroke-width="2.2" marker-end="url(#tTeal)"/>
+<line data-k="vet" x1="1090" y1="320" x2="1118" y2="320" stroke="#017E6B" stroke-width="2.2" marker-end="url(#tTeal)"/>
+
+<!-- busca semântica -->
+<text data-k="busca" x="680" y="412" font-size="12" font-style="italic" fill="#017E6B">Consulta: a cada pergunta</text>
+<rect data-k="busca" x="680" y="424" width="430" height="108" rx="5" fill="#fff" stroke="#ED7100" stroke-width="2"/>
+<svg data-k="busca" x="700" y="454" width="40" height="42" viewBox="700 454 40 42"><circle cx="716" cy="470" r="13" fill="none" stroke="#ED7100" stroke-width="2.5"/><line x1="725" y1="480" x2="736" y2="492" stroke="#ED7100" stroke-width="3"/></svg>
+<text data-k="busca" x="752" y="452" font-size="13.5" font-weight="bold" fill="#232F3E">Busca semântica · retrieve</text>
+<text data-k="busca" x="752" y="471" font-size="11.5" fill="#232F3E" font-family="Consolas, monospace">bedrock-agent-runtime</text>
+<text data-k="busca" x="752" y="489" font-size="11.5" fill="#232F3E" font-family="Consolas, monospace">managedSearchConfiguration</text>
+<text data-k="busca" x="752" y="510" font-size="11.5" fill="#545B64">devolve os trechos mais relevantes,</text>
+<text data-k="busca" x="752" y="525" font-size="11.5" fill="#545B64">com score, arquivo e página</text>
+<polyline data-k="busca" points="1220,380 1220,478 1112,478" fill="none" stroke="#017E6B" stroke-width="2.2" marker-end="url(#tTeal)"/>
+<text data-k="busca" x="1230" y="440" font-size="11" fill="#017E6B">compara a pergunta</text>
+<text data-k="busca" x="1230" y="455" font-size="11" fill="#017E6B">com os vetores</text>
+
+<!-- PDFs e S3 -->
+<svg data-k="pdfs" x="500" y="174" width="72" height="46" viewBox="500 174 72 46"><path d="M508,178 h20 l8,8 v30 h-28 z" fill="#FFFFFF" stroke="#232F3E" stroke-width="1.8"/><rect x="504" y="200" width="22" height="11" fill="#DD344C"/><text x="515" y="209" font-size="8" font-weight="bold" fill="#FFFFFF" text-anchor="middle">PDF</text><path d="M540,178 h20 l8,8 v30 h-28 z" fill="#FFFFFF" stroke="#232F3E" stroke-width="1.8"/><rect x="536" y="200" width="22" height="11" fill="#DD344C"/><text x="547" y="209" font-size="8" font-weight="bold" fill="#FFFFFF" text-anchor="middle">PDF</text></svg>
+<text data-k="pdfs" x="530" y="234" font-size="12.5" font-weight="bold" fill="#232F3E" text-anchor="middle">Documentos PDF</text>
+<text data-k="pdfs" x="530" y="249" font-size="11" fill="#545B64" text-anchor="middle">IA Expert Academy · Termos de uso</text>
+<line data-k="s3" x1="530" y1="256" x2="530" y2="292" stroke="#5B7A0F" stroke-width="2.4" marker-end="url(#tGreen)"/>
+<svg data-k="s3" x="504" y="294" width="52" height="58" viewBox="504 294 52 58"><path d="M508,302 h44 l-6,40 c-2,6 -30,6 -32,0 z" fill="#FFFFFF" stroke="#7AA116" stroke-width="2.5"/><ellipse cx="530" cy="302" rx="22" ry="6" fill="#FFFFFF" stroke="#7AA116" stroke-width="2.5"/></svg>
+<text data-k="s3" x="530" y="370" font-size="13" font-weight="bold" fill="#232F3E" text-anchor="middle">Amazon S3</text>
+<text data-k="s3" x="530" y="386" font-size="11.5" fill="#545B64" text-anchor="middle" font-family="Consolas, monospace">curso-bedrock-s3</text>
+<line data-k="sync" x1="556" y1="320" x2="678" y2="320" stroke="#5B7A0F" stroke-width="2.4" marker-end="url(#tGreen)"/>
+
+<!-- modelos de fundação -->
+<rect data-k="fm" x="640" y="585" width="700" height="200" fill="none" stroke="#01A88D" stroke-width="2" stroke-dasharray="7,5"/>
+<text data-k="fm" x="660" y="608" font-size="13.5" font-weight="bold" fill="#232F3E">Amazon Bedrock · modelos de fundação (bedrock-runtime)</text>
+
+<rect data-k="nova" x="680" y="622" width="310" height="145" rx="5" fill="#fff" stroke="#01A88D" stroke-width="2"/>
+<svg data-k="nova" x="694" y="636" width="40" height="40" viewBox="694 636 40 40"><circle cx="714" cy="656" r="18" fill="#01A88D"/><path d="M705,656 h18 M714,647 v18 M708,650 l12,12 M720,650 l-12,12" stroke="#FFFFFF" stroke-width="1.8"/></svg>
+<text data-k="nova" x="742" y="652" font-size="14" font-weight="bold" fill="#232F3E">Amazon Nova Micro</text>
+<text data-k="nova" x="742" y="670" font-size="11.5" fill="#232F3E" font-family="Consolas, monospace">us.amazon.nova-micro-v1:0</text>
+<text data-k="nova" x="698" y="700" font-size="11.5" fill="#232F3E">converse · gera a resposta usando</text>
+<text data-k="nova" x="698" y="716" font-size="11.5" fill="#232F3E">somente os trechos recuperados</text>
+<text data-k="nova" x="698" y="740" font-size="11" fill="#545B64">só texto · rápido e barato</text>
+<text data-k="nova" x="698" y="755" font-size="11" fill="#545B64">temperature 0.2 · até 512 tokens</text>
+
+<rect data-k="titan" x="1030" y="622" width="290" height="145" rx="5" fill="#fff" stroke="#01A88D" stroke-width="2"/>
+<svg data-k="titan" x="1048" y="640" width="34" height="34" viewBox="1048 640 34 34"><g fill="#01A88D"><circle cx="1056" cy="648" r="3"/><circle cx="1066" cy="648" r="3"/><circle cx="1056" cy="658" r="3"/><circle cx="1066" cy="658" r="3"/><circle cx="1076" cy="658" r="3"/><circle cx="1056" cy="668" r="3"/></g></svg>
+<text data-k="titan" x="1090" y="652" font-size="13" font-weight="bold" fill="#232F3E">Amazon Titan Text</text>
+<text data-k="titan" x="1090" y="668" font-size="13" font-weight="bold" fill="#232F3E">Embeddings V2</text>
+<text data-k="titan" x="1046" y="694" font-size="11.5" fill="#232F3E" font-family="Consolas, monospace">amazon.titan-embed-text-v2:0</text>
+<text data-k="titan" x="1046" y="716" font-size="11.5" fill="#232F3E">invoke_model · vetores de 1024</text>
+<text data-k="titan" x="1046" y="732" font-size="11.5" fill="#232F3E">dimensões</text>
+<text data-k="titan" x="1046" y="755" font-size="11" fill="#545B64">usado no notebook de estudo</text>
+
+<!-- custo (sempre visível) -->
+<rect x="640" y="810" width="470" height="92" rx="5" fill="#F7F7F7" stroke="#AAB7B8" stroke-width="1.2"/>
+<text x="656" y="833" font-size="12.5" font-weight="bold" fill="#232F3E">Custo e encerramento</text>
+<text x="656" y="852" font-size="11.5" fill="#232F3E">Base managed: armazenamento (~US$ 5/GB/mês) + buscas por uso.</text>
+<text x="656" y="869" font-size="11.5" fill="#232F3E">Modelos: cobrados por token. Sem OpenSearch nem servidor ligado.</text>
+<text x="656" y="886" font-size="11.5" fill="#232F3E">Ao terminar: apagar a Knowledge Base, o bucket e a chave IAM.</text>
+
+<!-- setas -->
+<line data-k="usuario" x1="192" y1="214" x2="192" y2="252" stroke="#232F3E" stroke-width="2.5" marker-end="url(#tDark)"/>
+<line data-k="rag" x1="328" y1="468" x2="677" y2="468" stroke="#232F3E" stroke-width="2.5" marker-end="url(#tDark)"/>
+<line data-k="rag" x1="680" y1="500" x2="331" y2="500" stroke="#ED7100" stroke-width="2.2" stroke-dasharray="7,4" marker-end="url(#tOrange)"/>
+<line data-k="rag" x1="328" y1="640" x2="677" y2="640" stroke="#232F3E" stroke-width="2.5" marker-end="url(#tDark)"/>
+<line data-k="rag" x1="680" y1="680" x2="331" y2="680" stroke="#01A88D" stroke-width="2.2" stroke-dasharray="7,4" marker-end="url(#tTeal)"/>
+<line data-k="cred" x1="192" y1="765" x2="192" y2="738" stroke="#DD344C" stroke-width="2" stroke-dasharray="5,3" marker-end="url(#tRed)"/>
+<polyline data-k="fluxoC" points="345,945 1175,945 1175,770" fill="none" stroke="#C25E00" stroke-width="2.2" stroke-dasharray="7,4" marker-end="url(#tOrange)"/>
+
+<!-- números dos fluxos -->
+<circle data-k="usuario" cx="192" cy="232" r="12" fill="#232F3E"/><text data-k="usuario" x="192" y="237" font-size="13" font-weight="bold" text-anchor="middle" fill="#fff">1</text>
+<circle data-k="rag" cx="470" cy="468" r="12" fill="#232F3E"/><text data-k="rag" x="470" y="473" font-size="13" font-weight="bold" text-anchor="middle" fill="#fff">2</text>
+<circle data-k="rag" cx="600" cy="500" r="12" fill="#ED7100"/><text data-k="rag" x="600" y="505" font-size="13" font-weight="bold" text-anchor="middle" fill="#fff">3</text>
+<circle data-k="rag" cx="470" cy="640" r="12" fill="#232F3E"/><text data-k="rag" x="470" y="645" font-size="13" font-weight="bold" text-anchor="middle" fill="#fff">4</text>
+<circle data-k="rag" cx="600" cy="680" r="12" fill="#01A88D"/><text data-k="rag" x="600" y="685" font-size="13" font-weight="bold" text-anchor="middle" fill="#fff">5</text>
+<circle data-k="s3" cx="530" cy="274" r="12" fill="#5B7A0F"/><text data-k="s3" x="530" y="279" font-size="13" font-weight="bold" text-anchor="middle" fill="#fff">A</text>
+<circle data-k="sync" cx="617" cy="320" r="12" fill="#5B7A0F"/><text data-k="sync" x="617" y="325" font-size="13" font-weight="bold" text-anchor="middle" fill="#fff">B</text>
+<circle data-k="fluxoC" cx="760" cy="945" r="12" fill="#C25E00"/><text data-k="fluxoC" x="760" y="950" font-size="13" font-weight="bold" text-anchor="middle" fill="#fff">C</text>
+
+<!-- legenda -->
+<circle data-k="usuario" cx="42" cy="1035" r="11" fill="#232F3E"/><text data-k="usuario" x="42" y="1040" font-size="13" font-weight="bold" text-anchor="middle" fill="#fff">1</text>
+<circle data-k="rag" cx="42" cy="1065" r="11" fill="#232F3E"/><text data-k="rag" x="42" y="1070" font-size="13" font-weight="bold" text-anchor="middle" fill="#fff">2</text>
+<circle data-k="rag" cx="42" cy="1095" r="11" fill="#ED7100"/><text data-k="rag" x="42" y="1100" font-size="13" font-weight="bold" text-anchor="middle" fill="#fff">3</text>
+<circle data-k="rag" cx="42" cy="1125" r="11" fill="#232F3E"/><text data-k="rag" x="42" y="1130" font-size="13" font-weight="bold" text-anchor="middle" fill="#fff">4</text>
+<circle data-k="rag" cx="42" cy="1155" r="11" fill="#01A88D"/><text data-k="rag" x="42" y="1160" font-size="13" font-weight="bold" text-anchor="middle" fill="#fff">5</text>
+<circle data-k="s3" cx="722" cy="1035" r="11" fill="#5B7A0F"/><text data-k="s3" x="722" y="1040" font-size="13" font-weight="bold" text-anchor="middle" fill="#fff">A</text>
+<circle data-k="sync" cx="722" cy="1065" r="11" fill="#5B7A0F"/><text data-k="sync" x="722" y="1070" font-size="13" font-weight="bold" text-anchor="middle" fill="#fff">B</text>
+<circle data-k="fluxoC" cx="722" cy="1095" r="11" fill="#C25E00"/><text data-k="fluxoC" x="722" y="1100" font-size="13" font-weight="bold" text-anchor="middle" fill="#fff">C</text>
+<text data-k="usuario" x="62" y="1040" font-size="13" fill="#232F3E">O usuário digita a pergunta no chat da aplicação Streamlit.</text>
+<text data-k="rag" x="62" y="1070" font-size="13" fill="#232F3E">A função ask chama o retrieve da Knowledge Base com a pergunta.</text>
+<text data-k="rag" x="62" y="1100" font-size="13" fill="#232F3E">A busca devolve os trechos mais relevantes, com score e página.</text>
+<text data-k="rag" x="62" y="1130" font-size="13" fill="#232F3E">A função monta o prompt (contexto + pergunta) e chama o converse.</text>
+<text data-k="rag" x="62" y="1160" font-size="13" fill="#232F3E">O Nova Micro responde; a resposta volta com as fontes.</text>
+<text data-k="s3" x="742" y="1040" font-size="13" fill="#232F3E">Os PDFs são enviados ao bucket S3 pelo Console da AWS.</text>
+<text data-k="sync" x="742" y="1070" font-size="13" fill="#232F3E">No sync, a base faz chunking, embeddings e indexação dos trechos.</text>
+<text data-k="fluxoC" x="742" y="1100" font-size="13" fill="#232F3E">No notebook, o Titan gera os vetores estudados com PCA e cosseno.</text>
+</svg></template>
+
+<div class="topbar">
+  <div class="topbar-in">
+    <div class="topbar-id">
+      <strong>Projeto RAG · Amazon Bedrock</strong>
+      <span>Console da AWS · Python · us-east-1</span>
+    </div>
+    <div class="prog">
+      <span class="prog-num" id="progNum">0 / 0</span>
+      <div class="prog-track"><div class="prog-fill" id="progFill"></div></div>
+    </div>
+    <button class="btn-ghost" id="tema" type="button">Tema: claro</button>
+    <button class="btn-ghost" id="reset" type="button">Limpar progresso</button>
+  </div>
+</div>
+
+<div class="shell">
+  <nav class="toc" id="toc" aria-label="Fases do projeto">
+    <div class="toc-label">Roteiro</div>
+  </nav>
+
+  <main>
+
+    <header class="hero">
+      <div class="eyebrow">Udemy · Amazon Bedrock Completo: RAG, Agentes e IA Generativa · Projeto RAG</div>
+      <h1>Um assistente que responde perguntas a partir de documentos PDF</h1>
+      <p class="lede">
+        O roteiro do projeto de RAG (Retrieval-Augmented Generation), em sequência: credenciais, documentos no S3,
+        base de conhecimento no Bedrock, embeddings no notebook, RAG via código e interface de chat com Streamlit.
+        Cada passo traz: o caminho no Console ou o código, para que serve cada campo, a resposta esperada,
+        as armadilhas que apareceram de verdade e um checklist.
+      </p>
+      <div class="facts">
+        <span class="fact"><b>região</b> us-east-1</span>
+        <span class="fact"><b>IAM</b> curso_bedrock</span>
+        <span class="fact"><b>S3</b> curso-bedrock-s3</span>
+        <span class="fact"><b>KB</b> knowledge-base-quick-start-2d1lr · 4SCLDZ9ZTH</span>
+        <span class="fact"><b>tipo</b> Bedrock Managed</span>
+        <span class="fact"><b>geração</b> Nova Micro</span>
+        <span class="fact"><b>embeddings</b> Titan Text V2</span>
+        <span class="fact"><b>interface</b> Streamlit · app.py</span>
+      </div>
+    </header>
+
+    <!-- ================================================================ MAPA -->
+    <section class="phase" id="p-mapa" data-group="Visão geral" data-title="Arquitetura e roteiro">
+      <div class="phase-head">
+        <span class="phase-n">MAPA</span>
+        <div>
+          <h2>A arquitetura, uma peça por fase</h2>
+          <p>Cada fase usa o que a anterior deixou pronto: as credenciais vêm antes de tudo, os PDFs antes da base de conhecimento, a base antes do RAG e o RAG antes da interface.</p>
+        </div>
+      </div>
+
+      <figure class="diag"><figcaption class="diag-cap">Arquitetura do projeto · os números seguem o caminho de uma pergunta; as letras, a preparação</figcaption><div class="diag-svg diag-1"><svg xmlns="http://www.w3.org/2000/svg" width="1400" height="1200" viewBox="0 0 1400 1200" role="img" aria-labelledby="t d" font-family="Arial, Helvetica, sans-serif">
+<title id="t">Amazon Bedrock · Arquitetura do projeto RAG</title>
+<desc id="d">Assistente da IA Expert Academy construído com RAG no Amazon Bedrock, na região us-east-1. Os PDFs (IA Expert Academy e Termos de uso) são enviados ao bucket S3 curso-bedrock-s3. Ao sincronizar, a Knowledge Base knowledge-base-quick-start-2d1lr (ID 4SCLDZ9ZTH, tipo Bedrock Managed) divide os documentos em trechos, gera os embeddings e armazena os vetores de forma gerenciada. No computador local, o usuário acessa a aplicação Streamlit (app.py) em localhost:8501. A função ask chama o retrieve do bedrock-agent-runtime com managedSearchConfiguration, recebe os trechos com score e página, monta o prompt com o contexto e chama o converse do bedrock-runtime com o modelo Amazon Nova Micro (us.amazon.nova-micro-v1:0). A resposta aparece no chat com as fontes e fica salva no session_state. As credenciais IAM são lidas de um arquivo CSV fora do código. No notebook de estudo, o Amazon Titan Text Embeddings V2 gera vetores de 1024 dimensões, usados para visualização com PCA e busca por similaridade de cosseno.</desc>
+<defs>
+  <marker id="aDark" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#232F3E"/></marker>
+  <marker id="aTeal" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#017E6B"/></marker>
+  <marker id="aGreen" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#5B7A0F"/></marker>
+  <marker id="aOrange" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#C25E00"/></marker>
+  <marker id="aRed" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="9" markerHeight="9" markerUnits="userSpaceOnUse" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#DD344C"/></marker>
+</defs>
+
+<rect x="0" y="0" width="1400" height="1200" fill="#FFFFFF"/>
+
+<!-- ===================== título ===================== -->
+<text x="700" y="36" font-size="20" font-weight="bold" fill="#232F3E" text-anchor="middle">Assistente IA Expert Academy · RAG com Amazon Bedrock</text>
+<text x="700" y="60" font-size="13.5" fill="#545B64" text-anchor="middle">PDF → S3 → Knowledge Base (chunking, embeddings, busca semântica) → Nova Micro → resposta com fontes</text>
+
+<!-- ===================== computador local ===================== -->
+<rect x="20" y="90" width="345" height="910" fill="none" stroke="#6B737C" stroke-width="2" stroke-dasharray="8,5"/>
+<rect x="20" y="90" width="150" height="30" fill="#6B737C"/>
+<text x="95" y="110" font-size="13" font-weight="bold" fill="#FFFFFF" text-anchor="middle">Computador local</text>
+
+<!-- usuário -->
+<g transform="translate(192,150)">
+  <circle cx="0" cy="-12" r="9" fill="none" stroke="#232F3E" stroke-width="2.5"/>
+  <path d="M-16,18 C-16,2 16,2 16,18" fill="none" stroke="#232F3E" stroke-width="2.5"/>
+</g>
+<text x="192" y="190" font-size="14" font-weight="bold" fill="#232F3E" text-anchor="middle">Usuário (navegador)</text>
+<text x="192" y="206" font-size="12" fill="#545B64" text-anchor="middle">http://localhost:8501</text>
+
+<!-- aplicação Streamlit -->
+<rect x="40" y="255" width="305" height="480" rx="6" fill="#FFFFFF" stroke="#FF4B4B" stroke-width="2.2"/>
+<rect x="56" y="270" width="44" height="44" rx="7" fill="#FF4B4B"/>
+<path d="M66,304 L78,280 L90,304 Z" fill="#FFFFFF"/>
+<path d="M61,304 L69,290 L77,304 Z" fill="#FFD5D5"/>
+<text x="112" y="288" font-size="14.5" font-weight="bold" fill="#232F3E">Aplicação Streamlit</text>
+<text x="112" y="306" font-size="12.5" fill="#545B64" font-family="Consolas, monospace">app.py</text>
+<g font-size="12" fill="#232F3E">
+  <text x="58" y="342">• Chat: st.chat_input / st.chat_message</text>
+  <text x="58" y="362">• Histórico: st.session_state</text>
+  <text x="58" y="382">• Clientes AWS: @st.cache_resource</text>
+  <text x="58" y="402">• Barra lateral: trechos e temperature</text>
+  <text x="58" y="422">• Fontes: st.expander (arquivo, página)</text>
+</g>
+
+<!-- função ask -->
+<rect x="58" y="440" width="270" height="275" rx="5" fill="#F2F3F3" stroke="#AAB7B8" stroke-width="1.2"/>
+<text x="193" y="463" font-size="13" font-weight="bold" fill="#232F3E" text-anchor="middle" font-family="Consolas, monospace">ask(pergunta)</text>
+<g font-size="12" fill="#232F3E">
+  <text x="72" y="490">retrieve → trechos do PDF</text>
+  <text x="72" y="545">monta o prompt:</text>
+  <text x="72" y="561" fill="#545B64">"responda só com o contexto"</text>
+  <text x="72" y="577" fill="#545B64">contexto + pergunta</text>
+  <text x="72" y="626">converse → resposta</text>
+  <text x="72" y="700">mostra resposta + fontes</text>
+</g>
+
+<!-- credenciais -->
+<rect x="40" y="765" width="305" height="80" rx="5" fill="#FDECEE" stroke="#DD344C" stroke-width="1.5"/>
+<text x="192" y="790" font-size="12.5" font-weight="bold" fill="#232F3E" text-anchor="middle">Credenciais IAM (fora do código)</text>
+<text x="192" y="808" font-size="11.5" fill="#232F3E" text-anchor="middle" font-family="Consolas, monospace">curso_bedrock_accessKeys.csv</text>
+<text x="192" y="826" font-size="11.5" fill="#545B64" text-anchor="middle">lidas por uma única boto3.Session</text>
+
+<!-- notebook -->
+<rect x="40" y="870" width="305" height="115" rx="5" fill="#FFF4E8" stroke="#ED7100" stroke-width="1.8"/>
+<text x="192" y="895" font-size="13" font-weight="bold" fill="#232F3E" text-anchor="middle">Notebook RAG (estudo)</text>
+<text x="192" y="915" font-size="11.5" fill="#232F3E" text-anchor="middle">embeddings → PCA (gráfico 2D)</text>
+<text x="192" y="932" font-size="11.5" fill="#232F3E" text-anchor="middle">→ similaridade de cosseno</text>
+<text x="192" y="958" font-size="11" fill="#545B64" text-anchor="middle">NumPy · scikit-learn · Matplotlib</text>
+
+<!-- ===================== AWS Cloud / Região ===================== -->
+<rect x="390" y="90" width="990" height="910" fill="none" stroke="#232F3E" stroke-width="2"/>
+<rect x="390" y="90" width="92" height="30" fill="#232F3E"/>
+<text x="436" y="110" font-size="13" font-weight="bold" fill="#FFFFFF" text-anchor="middle">AWS Cloud</text>
+
+<rect x="410" y="135" width="950" height="845" fill="none" stroke="#00A4A6" stroke-width="2" stroke-dasharray="8,5"/>
+<rect x="410" y="135" width="30" height="30" fill="#00A4A6"/>
+<path d="M420,159 V141 M420,142 H432 L428,147 L432,152 H420" fill="none" stroke="#FFFFFF" stroke-width="2"/>
+<text x="450" y="156" font-size="14" font-weight="bold" fill="#232F3E">Região us-east-1 (N. Virginia)</text>
+
+<!-- ===================== Knowledge Base ===================== -->
+<rect x="640" y="180" width="700" height="370" fill="#F2FAF8" stroke="#01A88D" stroke-width="2.5"/>
+<rect x="640" y="180" width="30" height="30" fill="#01A88D"/>
+<path d="M648,188 h14 v14 h-14 z M648,193 h14 M648,198 h14 M653,188 v14" fill="none" stroke="#FFFFFF" stroke-width="1.5"/>
+<text x="680" y="201" font-size="14.5" font-weight="bold" fill="#232F3E">Amazon Bedrock · Knowledge Base</text>
+<text x="680" y="222" font-size="12" fill="#545B64">knowledge-base-quick-start-2d1lr (4SCLDZ9ZTH) · tipo Bedrock Managed</text>
+<text x="680" y="250" font-size="12" font-style="italic" fill="#017E6B">Ingestão: quando a base é sincronizada (sync)</text>
+
+<!-- etapas de ingestão -->
+<rect x="680" y="262" width="190" height="118" rx="5" fill="#FFFFFF" stroke="#8C4FFF" stroke-width="1.8"/>
+<path d="M760,276 h22 l8,8 v28 h-30 z" fill="#FFFFFF" stroke="#8C4FFF" stroke-width="2"/>
+<path d="M764,290 h22 M764,297 h22 M764,304 h22" stroke="#8C4FFF" stroke-width="1.6" stroke-dasharray="3,2"/>
+<text x="775" y="338" font-size="13" font-weight="bold" fill="#232F3E" text-anchor="middle">Chunking</text>
+<text x="775" y="356" font-size="11.5" fill="#545B64" text-anchor="middle">divide os PDFs</text>
+<text x="775" y="371" font-size="11.5" fill="#545B64" text-anchor="middle">em trechos</text>
+
+<rect x="900" y="262" width="190" height="118" rx="5" fill="#FFFFFF" stroke="#01A88D" stroke-width="1.8"/>
+<g fill="#01A88D"><circle cx="970" cy="284" r="3"/><circle cx="980" cy="284" r="3"/><circle cx="970" cy="294" r="3"/><circle cx="980" cy="294" r="3"/><circle cx="990" cy="294" r="3"/><circle cx="970" cy="304" r="3"/><circle cx="980" cy="304" r="3"/></g>
+<path d="M1000,278 h-4 v32 h4" fill="none" stroke="#01A88D" stroke-width="1.8"/>
+<text x="1004" y="290" font-size="9" fill="#01A88D" font-family="Consolas, monospace">0.23</text>
+<text x="1004" y="302" font-size="9" fill="#01A88D" font-family="Consolas, monospace">-0.11</text>
+<text x="995" y="338" font-size="13" font-weight="bold" fill="#232F3E" text-anchor="middle">Embeddings</text>
+<text x="995" y="356" font-size="11.5" fill="#545B64" text-anchor="middle">cada trecho vira um vetor</text>
+<text x="995" y="371" font-size="11.5" fill="#545B64" text-anchor="middle">(modelo gerenciado)</text>
+
+<rect x="1120" y="262" width="200" height="118" rx="5" fill="#FFFFFF" stroke="#8C4FFF" stroke-width="1.8"/>
+<ellipse cx="1220" cy="281" rx="17" ry="5" fill="#FFFFFF" stroke="#8C4FFF" stroke-width="2"/>
+<path d="M1203,281 v24 a17,5 0 0 0 34,0 v-24 M1203,293 a17,5 0 0 0 34,0" fill="none" stroke="#8C4FFF" stroke-width="2"/>
+<text x="1220" y="338" font-size="13" font-weight="bold" fill="#232F3E" text-anchor="middle">Armazenamento vetorial</text>
+<text x="1220" y="356" font-size="11.5" fill="#545B64" text-anchor="middle">gerenciado pela AWS</text>
+<text x="1220" y="371" font-size="11.5" fill="#545B64" text-anchor="middle">(sem banco para administrar)</text>
+
+<line x1="870" y1="320" x2="898" y2="320" stroke="#017E6B" stroke-width="2.2" marker-end="url(#aTeal)"/>
+<line x1="1090" y1="320" x2="1118" y2="320" stroke="#017E6B" stroke-width="2.2" marker-end="url(#aTeal)"/>
+
+<!-- busca semântica -->
+<text x="680" y="412" font-size="12" font-style="italic" fill="#017E6B">Consulta: a cada pergunta</text>
+<rect x="680" y="424" width="430" height="108" rx="5" fill="#FFFFFF" stroke="#ED7100" stroke-width="2"/>
+<circle cx="716" cy="470" r="13" fill="none" stroke="#ED7100" stroke-width="2.5"/>
+<line x1="725" y1="480" x2="736" y2="492" stroke="#ED7100" stroke-width="3"/>
+<text x="752" y="452" font-size="13.5" font-weight="bold" fill="#232F3E">Busca semântica · retrieve</text>
+<text x="752" y="471" font-size="11.5" fill="#232F3E" font-family="Consolas, monospace">bedrock-agent-runtime</text>
+<text x="752" y="489" font-size="11.5" fill="#232F3E" font-family="Consolas, monospace">managedSearchConfiguration</text>
+<text x="752" y="510" font-size="11.5" fill="#545B64">devolve os trechos mais relevantes,</text>
+<text x="752" y="525" font-size="11.5" fill="#545B64">com score, arquivo e página</text>
+<polyline points="1220,380 1220,478 1112,478" fill="none" stroke="#017E6B" stroke-width="2.2" marker-end="url(#aTeal)"/>
+<text x="1230" y="440" font-size="11" fill="#017E6B">compara a pergunta</text>
+<text x="1230" y="455" font-size="11" fill="#017E6B">com os vetores</text>
+
+<!-- ===================== PDFs e S3 ===================== -->
+<g transform="translate(508,178)">
+  <path d="M0,0 h20 l8,8 v30 h-28 z" fill="#FFFFFF" stroke="#232F3E" stroke-width="1.8"/>
+  <rect x="-4" y="22" width="22" height="11" fill="#DD344C"/>
+  <text x="7" y="31" font-size="8" font-weight="bold" fill="#FFFFFF" text-anchor="middle">PDF</text>
+</g>
+<g transform="translate(540,178)">
+  <path d="M0,0 h20 l8,8 v30 h-28 z" fill="#FFFFFF" stroke="#232F3E" stroke-width="1.8"/>
+  <rect x="-4" y="22" width="22" height="11" fill="#DD344C"/>
+  <text x="7" y="31" font-size="8" font-weight="bold" fill="#FFFFFF" text-anchor="middle">PDF</text>
+</g>
+<text x="530" y="234" font-size="12.5" font-weight="bold" fill="#232F3E" text-anchor="middle">Documentos PDF</text>
+<text x="530" y="249" font-size="11" fill="#545B64" text-anchor="middle">IA Expert Academy · Termos de uso</text>
+
+<line x1="530" y1="256" x2="530" y2="292" stroke="#5B7A0F" stroke-width="2.4" marker-end="url(#aGreen)"/>
+<path d="M508,302 h44 l-6,40 c-2,6 -30,6 -32,0 z" fill="#FFFFFF" stroke="#7AA116" stroke-width="2.5"/>
+<ellipse cx="530" cy="302" rx="22" ry="6" fill="#FFFFFF" stroke="#7AA116" stroke-width="2.5"/>
+<text x="530" y="370" font-size="13" font-weight="bold" fill="#232F3E" text-anchor="middle">Amazon S3</text>
+<text x="530" y="386" font-size="11.5" fill="#545B64" text-anchor="middle" font-family="Consolas, monospace">curso-bedrock-s3</text>
+<line x1="556" y1="320" x2="678" y2="320" stroke="#5B7A0F" stroke-width="2.4" marker-end="url(#aGreen)"/>
+
+<!-- ===================== modelos de fundação ===================== -->
+<rect x="640" y="585" width="700" height="200" fill="none" stroke="#01A88D" stroke-width="2" stroke-dasharray="7,5"/>
+<text x="660" y="608" font-size="13.5" font-weight="bold" fill="#232F3E">Amazon Bedrock · modelos de fundação <tspan font-weight="normal" fill="#545B64" font-family="Consolas, monospace" font-size="12">(bedrock-runtime)</tspan></text>
+
+<rect x="680" y="622" width="310" height="145" rx="5" fill="#FFFFFF" stroke="#01A88D" stroke-width="2"/>
+<circle cx="714" cy="656" r="18" fill="#01A88D"/>
+<path d="M705,656 h18 M714,647 v18 M708,650 l12,12 M720,650 l-12,12" stroke="#FFFFFF" stroke-width="1.8"/>
+<text x="742" y="652" font-size="14" font-weight="bold" fill="#232F3E">Amazon Nova Micro</text>
+<text x="742" y="670" font-size="11.5" fill="#232F3E" font-family="Consolas, monospace">us.amazon.nova-micro-v1:0</text>
+<text x="698" y="700" font-size="11.5" fill="#232F3E"><tspan font-family="Consolas, monospace">converse</tspan> · gera a resposta usando</text>
+<text x="698" y="716" font-size="11.5" fill="#232F3E">somente os trechos recuperados</text>
+<text x="698" y="740" font-size="11" fill="#545B64">só texto · rápido e barato</text>
+<text x="698" y="755" font-size="11" fill="#545B64">temperature 0.2 · até 512 tokens</text>
+
+<rect x="1030" y="622" width="290" height="145" rx="5" fill="#FFFFFF" stroke="#01A88D" stroke-width="2"/>
+<g fill="#01A88D"><circle cx="1056" cy="648" r="3"/><circle cx="1066" cy="648" r="3"/><circle cx="1056" cy="658" r="3"/><circle cx="1066" cy="658" r="3"/><circle cx="1076" cy="658" r="3"/><circle cx="1056" cy="668" r="3"/></g>
+<text x="1090" y="652" font-size="13" font-weight="bold" fill="#232F3E">Amazon Titan Text</text>
+<text x="1090" y="668" font-size="13" font-weight="bold" fill="#232F3E">Embeddings V2</text>
+<text x="1046" y="694" font-size="11.5" fill="#232F3E" font-family="Consolas, monospace">amazon.titan-embed-text-v2:0</text>
+<text x="1046" y="716" font-size="11.5" fill="#232F3E"><tspan font-family="Consolas, monospace">invoke_model</tspan> · vetores de 1024</text>
+<text x="1046" y="732" font-size="11.5" fill="#232F3E">dimensões</text>
+<text x="1046" y="755" font-size="11" fill="#545B64">usado no notebook de estudo</text>
+
+<!-- ===================== custo ===================== -->
+<rect x="640" y="810" width="470" height="92" rx="5" fill="#F7F7F7" stroke="#AAB7B8" stroke-width="1.2"/>
+<text x="656" y="833" font-size="12.5" font-weight="bold" fill="#232F3E">Custo e encerramento</text>
+<text x="656" y="852" font-size="11.5" fill="#232F3E">Base managed: armazenamento (~US$ 5/GB/mês) + buscas por uso.</text>
+<text x="656" y="869" font-size="11.5" fill="#232F3E">Modelos: cobrados por token. Sem OpenSearch nem servidor ligado.</text>
+<text x="656" y="886" font-size="11.5" fill="#232F3E">Ao terminar: apagar a Knowledge Base, o bucket e a chave IAM.</text>
+
+<!-- ===================== setas entre o computador e a AWS ===================== -->
+<!-- 1 usuário → app -->
+<line x1="192" y1="214" x2="192" y2="252" stroke="#232F3E" stroke-width="2.5" marker-end="url(#aDark)"/>
+<!-- 2 ask → retrieve -->
+<line x1="328" y1="468" x2="677" y2="468" stroke="#232F3E" stroke-width="2.5" marker-end="url(#aDark)"/>
+<!-- 3 trechos → ask -->
+<line x1="680" y1="500" x2="331" y2="500" stroke="#ED7100" stroke-width="2.2" stroke-dasharray="7,4" marker-end="url(#aOrange)"/>
+<!-- 4 ask → converse -->
+<line x1="328" y1="640" x2="677" y2="640" stroke="#232F3E" stroke-width="2.5" marker-end="url(#aDark)"/>
+<!-- 5 resposta → ask -->
+<line x1="680" y1="680" x2="331" y2="680" stroke="#01A88D" stroke-width="2.2" stroke-dasharray="7,4" marker-end="url(#aTeal)"/>
+<!-- credenciais → app -->
+<line x1="192" y1="765" x2="192" y2="738" stroke="#DD344C" stroke-width="2" stroke-dasharray="5,3" marker-end="url(#aRed)"/>
+<!-- C notebook → Titan -->
+<polyline points="345,945 1175,945 1175,770" fill="none" stroke="#C25E00" stroke-width="2.2" stroke-dasharray="7,4" marker-end="url(#aOrange)"/>
+
+<!-- ===================== números dos fluxos ===================== -->
+<g font-size="13" font-weight="bold" text-anchor="middle" fill="#FFFFFF">
+  <circle cx="192" cy="232" r="12" fill="#232F3E"/><text x="192" y="237">1</text>
+  <circle cx="470" cy="468" r="12" fill="#232F3E"/><text x="470" y="473">2</text>
+  <circle cx="600" cy="500" r="12" fill="#ED7100"/><text x="600" y="505">3</text>
+  <circle cx="470" cy="640" r="12" fill="#232F3E"/><text x="470" y="645">4</text>
+  <circle cx="600" cy="680" r="12" fill="#01A88D"/><text x="600" y="685">5</text>
+  <circle cx="530" cy="274" r="12" fill="#5B7A0F"/><text x="530" y="279">A</text>
+  <circle cx="617" cy="320" r="12" fill="#5B7A0F"/><text x="617" y="325">B</text>
+  <circle cx="760" cy="945" r="12" fill="#C25E00"/><text x="760" y="950">C</text>
+</g>
+
+<!-- ===================== legenda ===================== -->
+<g font-size="13" fill="#232F3E">
+  <g font-weight="bold" text-anchor="middle" fill="#FFFFFF">
+    <circle cx="42" cy="1035" r="11" fill="#232F3E"/><text x="42" y="1040">1</text>
+    <circle cx="42" cy="1065" r="11" fill="#232F3E"/><text x="42" y="1070">2</text>
+    <circle cx="42" cy="1095" r="11" fill="#ED7100"/><text x="42" y="1100">3</text>
+    <circle cx="42" cy="1125" r="11" fill="#232F3E"/><text x="42" y="1130">4</text>
+    <circle cx="42" cy="1155" r="11" fill="#01A88D"/><text x="42" y="1160">5</text>
+    <circle cx="722" cy="1035" r="11" fill="#5B7A0F"/><text x="722" y="1040">A</text>
+    <circle cx="722" cy="1065" r="11" fill="#5B7A0F"/><text x="722" y="1070">B</text>
+    <circle cx="722" cy="1095" r="11" fill="#C25E00"/><text x="722" y="1100">C</text>
+  </g>
+  <text x="62" y="1040">O usuário digita a pergunta no chat da aplicação Streamlit.</text>
+  <text x="62" y="1070">A função ask chama o retrieve da Knowledge Base com a pergunta.</text>
+  <text x="62" y="1100">A busca devolve os trechos mais relevantes, com score e página.</text>
+  <text x="62" y="1130">O app monta o prompt (contexto + pergunta) e chama o converse.</text>
+  <text x="62" y="1160">O Nova Micro responde; o chat mostra a resposta e as fontes.</text>
+  <text x="742" y="1040">Os PDFs são enviados ao bucket S3 pelo Console da AWS.</text>
+  <text x="742" y="1070">No sync, a base faz chunking, embeddings e indexação dos trechos.</text>
+  <text x="742" y="1100">No notebook, o Titan gera os vetores estudados com PCA e cosseno.</text>
+  <text x="722" y="1133" font-size="11.5" fill="#545B64">Obs.: a base Bedrock Managed não aceita retrieve_and_generate,</text>
+  <text x="722" y="1149" font-size="11.5" fill="#545B64">por isso o RAG é feito em duas chamadas: retrieve + converse.</text>
+</g>
+</svg></div></figure>
+
+      <h3 class="mapa-h">Fluxo de uma pergunta, em linguagem simples</h3>
+      <div class="tablewrap"><table>
+        <thead><tr><th>#</th><th>Recurso</th><th>O que faz</th></tr></thead>
+        <tbody>
+          <tr><td>A</td><td>Amazon S3</td><td>Guarda os PDFs da IA Expert Academy (a "fonte de conhecimento").</td></tr>
+          <tr><td>B</td><td>Knowledge Base (sync)</td><td>Lê os PDFs, divide em trechos (chunking), transforma cada trecho em vetor (embedding) e indexa.</td></tr>
+          <tr><td>1</td><td>Aplicação Streamlit</td><td>O usuário digita a pergunta no chat, no navegador.</td></tr>
+          <tr><td>2</td><td><code>retrieve</code></td><td>A função <code>ask</code> pede à base os trechos mais parecidos com a pergunta.</td></tr>
+          <tr><td>3</td><td>Busca semântica</td><td>A base devolve os trechos, com score, arquivo e página.</td></tr>
+          <tr><td>4</td><td><code>converse</code></td><td>Os trechos viram o contexto do prompt, enviado ao Nova Micro.</td></tr>
+          <tr><td>5</td><td>Amazon Nova Micro</td><td>Gera a resposta usando só o contexto; o chat mostra a resposta e as fontes.</td></tr>
+          <tr><td>C</td><td>Titan Text Embeddings V2</td><td>No notebook de estudo, gera vetores para entender embeddings, PCA e similaridade.</td></tr>
+        </tbody>
+      </table></div>
+
+      <h3 class="mapa-h">Etapa do curso → onde está no guia</h3>
+      <div class="tablewrap"><table>
+        <thead><tr><th>Etapa do curso</th><th>O que entrega</th><th>Fase</th></tr></thead>
+        <tbody>
+          <tr><td>Credenciais AWS</td><td>Usuário IAM <code>curso_bedrock</code> e chave de acesso em CSV</td><td><a href="#p0">F0</a></td></tr>
+          <tr><td>RAG · armazenamento no S3</td><td>Bucket <code>curso-bedrock-s3</code> com o PDF</td><td><a href="#p1">F1</a></td></tr>
+          <tr><td>Base de conhecimento no Bedrock</td><td>Knowledge Base managed, testada no Console, com 2 documentos</td><td><a href="#p2">F2</a></td></tr>
+          <tr><td>Embeddings e busca vetorial</td><td>Notebook com Titan, PCA e similaridade de cosseno</td><td><a href="#p3">F3</a></td></tr>
+          <tr><td>RAG via código</td><td>Função <code>ask</code> com <code>retrieve</code> + <code>converse</code>, citações e score</td><td><a href="#p4">F4</a></td></tr>
+          <tr><td>Interface gráfica com Streamlit</td><td>Chat no navegador com as fontes de cada resposta</td><td><a href="#p5">F5</a></td></tr>
+          <tr><td>Encerramento</td><td>Recursos apagados e alerta de gastos</td><td><a href="#p6">F6</a></td></tr>
+        </tbody>
+      </table></div>
+
+      <div class="note n-warn"><b>Onde este projeto difere da aula</b>
+        <ul>
+          <li>A base criada pelo Console é do tipo <b>Bedrock Managed</b>, que não aceita <code>retrieve_and_generate</code>. O RAG foi refeito em duas chamadas: <code>retrieve</code> + <code>converse</code> (<a href="#p4">Fase 4</a>).</li>
+          <li>Na aula, a interface chama uma API do curso (API Gateway → Lambda → Agente, em <code>us-east-2</code>). Aqui a interface chama o Bedrock direto, com os recursos da própria conta (<a href="#p5">Fase 5</a>).</li>
+        </ul>
+      </div>
+      <div class="note n-tip"><b>Como usar este guia</b>
+        <p>Os nomes dos campos aparecem como estão no Console em inglês (<span class="ui">Create bucket</span>). No topo de cada fase, o mapa mostra o que já foi feito (verde), o que a fase constrói (laranja) e o que vem a seguir (tracejado). Marque o checklist ao final de cada passo: o progresso fica salvo neste navegador.</p>
+      </div>
+    </section>
+
+    <!-- ================================================================ F0 -->
+    <section class="phase" id="p0" data-group="Preparação" data-title="Credenciais (IAM)">
+      <div class="phase-head">
+        <span class="phase-n">FASE 0</span>
+        <div>
+          <h2>Região, usuário IAM e chave de acesso</h2>
+          <p>O código Python precisa de uma identidade para falar com a AWS. Criamos um usuário só para o curso e uma chave de acesso, guardada fora do código.</p>
+        </div>
+        <span class="phase-count" data-count-for="p0"></span>
+      </div>
+
+      <div class="ascii arch fase-map"><div class="arch-cap">Arquitetura · o que esta fase constrói</div><div class="arch-svg" data-fase="0"></div><div class="arch-leg"><span class="d-done">já feito</span><span class="d-now">■ esta fase</span><span class="d-next">■ próxima fase</span><span class="d-todo">■ depois</span></div></div>
+
+      <div class="step" id="passo-0-1">
+        <div class="step-top"><a class="step-id" href="#passo-0-1">0.1</a><h3>Fixar a região</h3><span class="where w-console" title="Console da AWS">CONSOLE</span></div>
+        <div class="why"><b>Por quê</b> A base de conhecimento, o bucket e os modelos precisam estar na mesma região para o código encontrá-los.</div>
+        <div class="console">
+          <div class="console-head"><b>Console da AWS</b><span>qualquer tela</span></div>
+          <div class="console-path"><span class="console-lbl">Caminho</span><span class="ui">Seletor de região</span><i>›</i><span class="ui">United States (N. Virginia)</span></div>
+        </div>
+        <div class="out good"><span class="out-label">Resposta esperada</span><pre>Topo do Console: United States (N. Virginia) · us-east-1</pre></div>
+        <div class="check"><div class="check-label">Checklist</div><ul>
+          <li><label><input type="checkbox"><span>Região <code>us-east-1</code> selecionada</span></label></li>
+        </ul></div>
+      </div>
+
+      <div class="step" id="passo-0-2">
+        <div class="step-top"><a class="step-id" href="#passo-0-2">0.2</a><h3>Criar o usuário IAM do curso</h3><span class="where w-console" title="Console da AWS">CONSOLE</span></div>
+        <div class="why"><b>Por quê</b> O usuário root não deve ser usado no dia a dia, e o Console não deixa criar a base de conhecimento com ele. Um usuário próprio também permite apagar tudo do curso de uma vez no final.</div>
+        <div class="console">
+          <div class="console-head"><b>Console da AWS</b><span>IAM</span></div>
+          <div class="console-path"><span class="console-lbl">Caminho</span><span class="ui">IAM</span><i>›</i><span class="ui">Users</span><i>›</i><span class="ui">Create user</span></div>
+          <div class="console-tela">
+            <h4><span class="console-n">Tela 1</span>User details</h4>
+            <table class="console-campos">
+              <thead><tr><th>Campo na tela</th><th>O que fazer</th><th>Para quê</th></tr></thead>
+              <tbody>
+                <tr><td>User name</td><td><b class="acao">Digitar</b> <code>curso_bedrock</code></td><td>Identifica o usuário do curso</td></tr>
+                <tr><td>Provide user access to the AWS Management Console <span class="opc">(opcional)</span></td><td><b class="acao">Marcar</b></td><td>Permite entrar no Console com esse usuário (necessário para criar a base)</td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="console-tela">
+            <h4><span class="console-n">Tela 2</span>Set permissions</h4>
+            <table class="console-campos">
+              <thead><tr><th>Campo na tela</th><th>O que fazer</th><th>Para quê</th></tr></thead>
+              <tbody>
+                <tr><td>Permissions options</td><td><b class="acao">Selecionar</b> <span class="ui">Add user to group</span> › <span class="ui">Create group</span></td><td>As permissões ficam no grupo, não no usuário</td></tr>
+                <tr><td>User group name</td><td><b class="acao">Digitar</b> <code>full-access</code></td><td>Nome do grupo</td></tr>
+                <tr><td>Permissions policies</td><td><b class="acao">Marcar</b> <span class="ui">AdministratorAccess</span></td><td>Libera Bedrock, S3 e IAM para o curso</td></tr>
+              </tbody>
+            </table>
+            <p class="console-fim"><b class="acao">Clicar</b> <kbd class="ui-btn">Create user group</kbd> › <kbd class="ui-btn">Next</kbd> › <kbd class="ui-btn">Create user</kbd></p>
+          </div>
+        </div>
+        <div class="note n-warn"><b>Menor privilégio</b>
+          <p><span class="ui">AdministratorAccess</span> libera tudo na conta. Para estudo funciona, mas o ideal é uma policy só com o que o projeto usa (Bedrock e leitura do bucket).</p>
+        </div>
+        <div class="note n-key"><b>Guarde a senha num cofre, não em anotações</b>
+          <p>A tela final mostra a URL de login, o usuário e a senha do Console. Use <span class="ui">Download .csv file</span> e guarde num gerenciador de senhas; não copie a senha para arquivos de texto do projeto.</p>
+        </div>
+        <div class="check"><div class="check-label">Checklist</div><ul>
+          <li><label><input type="checkbox"><span>Usuário <code>curso_bedrock</code> criado com acesso ao Console</span></label></li>
+          <li><label><input type="checkbox"><span>Grupo <code>full-access</code> com <span class="ui">AdministratorAccess</span></span></label></li>
+        </ul></div>
+      </div>
+
+      <div class="step" id="passo-0-3">
+        <div class="step-top"><a class="step-id" href="#passo-0-3">0.3</a><h3>Criar a chave de acesso para o código</h3><span class="where w-console" title="Console da AWS">CONSOLE</span></div>
+        <div class="why"><b>Por quê</b> A senha serve para o Console; o Python usa outra credencial: o par <i>Access key ID</i> + <i>Secret access key</i>.</div>
+        <div class="console">
+          <div class="console-head"><b>Console da AWS</b><span>IAM</span></div>
+          <div class="console-path"><span class="console-lbl">Caminho</span><span class="ui">IAM</span><i>›</i><span class="ui">Users</span><i>›</i><span class="ui">curso_bedrock</span><i>›</i><span class="ui">Security credentials</span><i>›</i><span class="ui">Create access key</span></div>
+          <div class="console-tela">
+            <table class="console-campos">
+              <thead><tr><th>Campo na tela</th><th>O que fazer</th><th>Para quê</th></tr></thead>
+              <tbody>
+                <tr><td>Use case</td><td><b class="acao">Selecionar</b> <span class="ui">Local code</span> e marcar a confirmação</td><td>Chave para código rodando no próprio computador</td></tr>
+                <tr><td>Description tag value <span class="opc">(opcional)</span></td><td><b class="acao">Digitar</b> <code>keys-curso-bedrock</code></td><td>Saber depois para que a chave serve</td></tr>
+                <tr><td>Retrieve access keys</td><td><b class="acao">Clicar</b> <span class="ui">Download .csv file</span></td><td>A <i>Secret access key</i> só aparece nesta tela</td></tr>
+              </tbody>
+            </table>
+            <p class="console-fim">Salvar o arquivo na pasta do projeto como <code>curso_bedrock_accessKeys.csv</code></p>
+          </div>
+        </div>
+        <div class="note n-key"><b>A chave nunca vai para o código</b>
+          <p>Quem tem a chave tem acesso à conta (e às cobranças). Ela fica no CSV, que o código lê; o CSV não vai para o GitHub nem para anotações. Na <a href="#p6">Fase 6</a> a chave é apagada.</p>
+        </div>
+        <div class="check"><div class="check-label">Checklist</div><ul>
+          <li><label><input type="checkbox"><span>Chave criada com o caso de uso <span class="ui">Local code</span></span></label></li>
+          <li><label><input type="checkbox"><span><code>curso_bedrock_accessKeys.csv</code> salvo na pasta do projeto</span></label></li>
+        </ul></div>
+      </div>
+      <div class="recap" data-phase="0">
+        <div class="recap-head">Onde você está · fim da Fase 0</div>
+        <div class="ascii arch recap-map"><div class="arch-svg"></div><div class="arch-leg"><span class="d-done">já feito</span><span class="d-now">■ esta fase</span><span class="d-next">■ próxima fase</span><span class="d-todo">■ depois</span></div></div>
+        <dl class="recap-txt">
+          <dt>O que foi feito</dt><dd>Região <code>us-east-1</code> fixada, usuário <code>curso_bedrock</code> criado e chave de acesso salva em CSV.</dd>
+          <dt>Como</dt><dd><ol class="recap-passos"><li>Conferiu a região (0.1).</li><li>Criou o usuário e o grupo <code>full-access</code> (0.2).</li><li>Criou a chave <span class="ui">Local code</span> e baixou o CSV (0.3).</li></ol></dd>
+          <dt>Termos</dt><dd><ul class="recap-termos"><li><b>IAM</b> · serviço que controla quem pode fazer o quê na conta.</li><li><b>Access key</b> · credencial usada por código (ID + segredo).</li><li><b>Root</b> · dono da conta; não se usa no dia a dia.</li></ul></dd>
+          <dt>Por que importa</dt><dd>Sem credencial, o Python não chama o Bedrock; com a credencial no código, qualquer um que veja o arquivo usa a sua conta.</dd>
+        </dl>
+        <p class="recap-next"><b>Próxima</b> <a href="#p1">Fase 1 · Documentos no S3</a></p>
+      </div>
+    </section>
+
+    <!-- ================================================================ F1 -->
+    <section class="phase" id="p1" data-group="Construir a base" data-title="Documentos no S3">
+      <div class="phase-head">
+        <span class="phase-n">FASE 1</span>
+        <div>
+          <h2>Os documentos: um bucket S3 com o PDF</h2>
+          <p>O PDF da IA Expert Academy é a fonte de conhecimento. A base de conhecimento vai ler os documentos a partir do S3.</p>
+        </div>
+        <span class="phase-count" data-count-for="p1"></span>
+      </div>
+
+      <div class="ascii arch fase-map"><div class="arch-cap">Arquitetura · o que esta fase constrói</div><div class="arch-svg" data-fase="1"></div><div class="arch-leg"><span class="d-done">já feito</span><span class="d-now">■ esta fase</span><span class="d-next">■ próxima fase</span><span class="d-todo">■ depois</span></div></div>
+
+      <div class="step" id="passo-1-1">
+        <div class="step-top"><a class="step-id" href="#passo-1-1">1.1</a><h3>Criar o bucket</h3><span class="where w-console" title="Console da AWS">CONSOLE</span></div>
+        <div class="why"><b>Por quê</b> O bucket é a "pasta" na nuvem de onde a base de conhecimento lê os documentos. Ele fica privado: só a base e o seu usuário acessam.</div>
+        <div class="console">
+          <div class="console-head"><b>Console da AWS</b><span>S3</span></div>
+          <div class="console-path"><span class="console-lbl">Caminho</span><span class="ui">Amazon S3</span><i>›</i><span class="ui">Buckets</span><i>›</i><span class="ui">Create bucket</span></div>
+          <div class="console-tela">
+            <table class="console-campos">
+              <thead><tr><th>Campo na tela</th><th>O que fazer</th><th>Para quê</th></tr></thead>
+              <tbody>
+                <tr><td>Bucket type</td><td><b class="acao">Selecionar</b> <span class="ui">General purpose</span></td><td>Bucket comum, para arquivos</td></tr>
+                <tr><td>Bucket name</td><td><b class="acao">Digitar</b> <code>curso-bedrock-s3</code></td><td>O nome é único no mundo; se já existir, acrescente um sufixo</td></tr>
+                <tr><td>Object Ownership</td><td><b class="acao">Manter</b> <span class="ui">ACLs disabled (recommended)</span></td><td>As permissões ficam só nas policies</td></tr>
+                <tr><td>Block Public Access</td><td><b class="acao">Manter</b> <span class="ui">Block all public access</span></td><td>Ninguém de fora lê os documentos</td></tr>
+                <tr><td>Bucket Versioning</td><td><b class="acao">Manter</b> <span class="ui">Disable</span></td><td>Não guarda versões antigas (menos custo)</td></tr>
+                <tr><td>Default encryption</td><td><b class="acao">Manter</b> <span class="ui">SSE-S3</span> e <span class="ui">Bucket Key: Enable</span></td><td>Arquivos criptografados em repouso, sem custo extra</td></tr>
+              </tbody>
+            </table>
+            <p class="console-fim"><b class="acao">Clicar</b> <kbd class="ui-btn">Create bucket</kbd></p>
+          </div>
+        </div>
+        <div class="check"><div class="check-label">Checklist</div><ul>
+          <li><label><input type="checkbox"><span>Bucket <code>curso-bedrock-s3</code> criado, privado e criptografado</span></label></li>
+        </ul></div>
+      </div>
+
+      <div class="step" id="passo-1-2">
+        <div class="step-top"><a class="step-id" href="#passo-1-2">1.2</a><h3>Enviar o PDF</h3><span class="where w-console" title="Console da AWS">CONSOLE</span></div>
+        <div class="why"><b>Por quê</b> Sem documento no bucket, a base de conhecimento não tem o que indexar.</div>
+        <div class="console">
+          <div class="console-head"><b>Console da AWS</b><span>S3</span></div>
+          <div class="console-path"><span class="console-lbl">Caminho</span><span class="ui">Amazon S3</span><i>›</i><span class="ui">Buckets</span><i>›</i><span class="ui">curso-bedrock-s3</span><i>›</i><span class="ui">Upload</span></div>
+          <div class="console-tela">
+            <p><b class="acao">Clicar</b> <span class="ui">Add files</span>, escolher <code>IA Expert Academy.pdf</code> e <b class="acao">clicar</b> <kbd class="ui-btn">Upload</kbd>.</p>
+          </div>
+        </div>
+        <div class="out good"><span class="out-label">Resposta esperada</span><pre>Upload succeeded · 1 file · IA Expert Academy.pdf</pre></div>
+        <div class="note n-tip"><b>Dica</b>
+          <p>O segundo documento (<code>Termos de uso.pdf</code>) entra depois, no passo <a href="#passo-2-3">2.3</a>, para mostrar como acrescentar conteúdo a uma base que já existe.</p>
+        </div>
+        <div class="check"><div class="check-label">Checklist</div><ul>
+          <li><label><input type="checkbox"><span><code>IA Expert Academy.pdf</code> aparece no bucket</span></label></li>
+        </ul></div>
+      </div>
+      <div class="recap" data-phase="1">
+        <div class="recap-head">Onde você está · fim da Fase 1</div>
+        <div class="ascii arch recap-map"><div class="arch-svg"></div><div class="arch-leg"><span class="d-done">já feito</span><span class="d-now">■ esta fase</span><span class="d-next">■ próxima fase</span><span class="d-todo">■ depois</span></div></div>
+        <dl class="recap-txt">
+          <dt>O que foi feito</dt><dd>Bucket <code>curso-bedrock-s3</code> criado, privado, com o PDF da IA Expert Academy.</dd>
+          <dt>Como</dt><dd><ol class="recap-passos"><li>Criou o bucket com acesso público bloqueado (1.1).</li><li>Enviou o PDF (1.2).</li></ol></dd>
+          <dt>Termos</dt><dd><ul class="recap-termos"><li><b>Bucket</b> · "pasta" do S3 onde ficam os arquivos (objetos).</li><li><b>Fonte de conhecimento</b> · os documentos que o assistente pode usar para responder.</li></ul></dd>
+          <dt>Por que importa</dt><dd>O RAG só responde o que está nos documentos: o PDF é o limite do que o assistente sabe.</dd>
+        </dl>
+        <p class="recap-next"><b>Próxima</b> <a href="#p2">Fase 2 · Knowledge Base</a></p>
+      </div>
+    </section>
+
+    <!-- ================================================================ F2 -->
+    <section class="phase" id="p2" data-group="Construir a base" data-title="Knowledge Base">
+      <div class="phase-head">
+        <span class="phase-n">FASE 2</span>
+        <div>
+          <h2>A base de conhecimento: chunking, embeddings e índice, sem código</h2>
+          <p>A Knowledge Base do Bedrock faz sozinha a parte pesada do RAG: lê os PDFs, divide em trechos, gera os vetores e guarda tudo num índice pronto para busca.</p>
+        </div>
+        <span class="phase-count" data-count-for="p2"></span>
+      </div>
+
+      <div class="ascii arch fase-map"><div class="arch-cap">Arquitetura · o que esta fase constrói</div><div class="arch-svg" data-fase="2"></div><div class="arch-leg"><span class="d-done">já feito</span><span class="d-now">■ esta fase</span><span class="d-next">■ próxima fase</span><span class="d-todo">■ depois</span></div></div>
+
+      <div class="step" id="passo-2-1">
+        <div class="step-top"><a class="step-id" href="#passo-2-1">2.1</a><h3>Criar a Knowledge Base managed</h3><span class="where w-console" title="Console da AWS">CONSOLE</span></div>
+        <div class="why"><b>Por quê</b> No tipo <b>Bedrock Managed</b>, a AWS cuida do banco vetorial, do modelo de embeddings e do reranking. Não há banco para criar nem servidor ligado por hora.</div>
+        <div class="console">
+          <div class="console-head"><b>Console da AWS</b><span>Amazon Bedrock · logado como <code>curso_bedrock</code></span></div>
+          <div class="console-path"><span class="console-lbl">Caminho</span><span class="ui">Amazon Bedrock</span><i>›</i><span class="ui">Knowledge Bases</span><i>›</i><span class="ui">Create Managed KB</span></div>
+          <div class="console-tela">
+            <h4><span class="console-n">Tela única</span>Create Managed Knowledge Base</h4>
+            <table class="console-campos">
+              <thead><tr><th>Campo na tela</th><th>O que fazer</th><th>Para quê</th></tr></thead>
+              <tbody>
+                <tr><td>KB name</td><td><b class="acao">Manter</b> o nome sugerido (<code>knowledge-base-quick-start-…</code>)</td><td>Identifica a base no Console</td></tr>
+                <tr><td>IAM permissions</td><td><b class="acao">Selecionar</b> <span class="ui">Create and use a new service role</span></td><td>A base ganha a própria permissão para ler o bucket</td></tr>
+                <tr><td>Data source type</td><td><b class="acao">Selecionar</b> <span class="ui">Amazon S3</span> · <span class="ui">This AWS account</span></td><td>Diz de onde vêm os documentos</td></tr>
+                <tr><td>S3 URI</td><td><b class="acao">Clicar</b> <span class="ui">Browse S3</span> › <code>curso-bedrock-s3</code> › <span class="ui">Choose</span></td><td>Aponta para o bucket da Fase 1</td></tr>
+                <tr><td>Text chunking strategy</td><td><b class="acao">Manter</b> <span class="ui">Default chunking</span></td><td>A AWS escolhe o tamanho dos trechos</td></tr>
+              </tbody>
+            </table>
+            <p class="console-fim"><b class="acao">Clicar</b> <kbd class="ui-btn">Create Knowledge Base</kbd></p>
+          </div>
+        </div>
+        <div class="out good"><span class="out-label">Resposta esperada</span><pre>knowledge-base-quick-start-2d1lr · Status: Available
+Knowledge Base ID: 4SCLDZ9ZTH   ← anote: o código usa este ID</pre></div>
+        <div class="note n-warn"><b>Armadilha comum</b>
+          <p>Tentar criar a base logado como <b>root</b>: o Console recusa. Entre com o usuário <code>curso_bedrock</code> (Fase 0).</p>
+        </div>
+        <details class="fallback">
+          <summary>Managed × customer-managed: qual a diferença?</summary>
+          <div class="tablewrap"><table>
+            <thead><tr><th></th><th>Bedrock Managed (este projeto)</th><th>Customer-managed (aula)</th></tr></thead>
+            <tbody>
+              <tr><td>Banco vetorial</td><td>A AWS cuida de tudo</td><td>Você escolhe e mantém (OpenSearch, S3 Vectors…)</td></tr>
+              <tr><td>Configuração da busca</td><td><code>managedSearchConfiguration</code></td><td><code>vectorSearchConfiguration</code></td></tr>
+              <tr><td><code>retrieve_and_generate</code></td><td>Não suportado</td><td>Suportado</td></tr>
+              <tr><td><code>retrieve</code></td><td>Suportado</td><td>Suportado</td></tr>
+            </tbody>
+          </table></div>
+        </details>
+        <div class="check"><div class="check-label">Checklist</div><ul>
+          <li><label><input type="checkbox"><span>Base criada e em <span class="ui">Available</span></span></label></li>
+          <li><label><input type="checkbox"><span>Knowledge Base ID anotado</span></label></li>
+        </ul></div>
+      </div>
+
+      <div class="step" id="passo-2-2">
+        <div class="step-top"><a class="step-id" href="#passo-2-2">2.2</a><h3>Testar a base pelo Console</h3><span class="where w-console" title="Console da AWS">CONSOLE</span></div>
+        <div class="why"><b>Por quê</b> Confirmar que a base responde antes de escrever código separa os problemas: se aqui funciona, um erro depois é do código.</div>
+        <div class="console">
+          <div class="console-head"><b>Console da AWS</b><span>Amazon Bedrock</span></div>
+          <div class="console-path"><span class="console-lbl">Caminho</span><span class="ui">Knowledge Bases</span><i>›</i><span class="ui">knowledge-base-quick-start-2d1lr</span><i>›</i><span class="ui">Test</span></div>
+          <div class="console-tela">
+            <table class="console-campos">
+              <thead><tr><th>Campo na tela</th><th>O que fazer</th><th>Para quê</th></tr></thead>
+              <tbody>
+                <tr><td>API</td><td><b class="acao">Selecionar</b> <span class="ui">Agentic retrieval with answer generation</span></td><td>Busca nos documentos e gera a resposta</td></tr>
+                <tr><td>Model</td><td><b class="acao">Selecionar</b> um modelo de texto</td><td>Quem escreve a resposta</td></tr>
+                <tr><td>Write a prompt</td><td><b class="acao">Digitar</b> <code>Tem trilhas?</code> e <span class="ui">Run</span></td><td>Pergunta cuja resposta está no PDF</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="out good"><span class="out-label">Resposta esperada</span><pre>Sim. A IA Expert Academy oferece trilhas de aprendizagem: Machine Learning,
+Redes Neurais e Deep Learning, Visão Computacional, Processamento de Linguagem Natural…</pre></div>
+        <div class="check"><div class="check-label">Checklist</div><ul>
+          <li><label><input type="checkbox"><span>A base respondeu com informações do PDF</span></label></li>
+        </ul></div>
+      </div>
+
+      <div class="step" id="passo-2-3">
+        <div class="step-top"><a class="step-id" href="#passo-2-3">2.3</a><h3>Acrescentar um documento e sincronizar</h3><span class="where w-console" title="Console da AWS">CONSOLE</span></div>
+        <div class="why"><b>Por quê</b> A base não percebe sozinha um arquivo novo no bucket. Ela só indexa o que for <b>sincronizado</b> (seta B do mapa).</div>
+        <div class="console">
+          <div class="console-head"><b>Console da AWS</b><span>S3 e Amazon Bedrock</span></div>
+          <div class="console-path"><span class="console-lbl">Caminho</span><span class="ui">Amazon S3</span><i>›</i><span class="ui">curso-bedrock-s3</span><i>›</i><span class="ui">Upload</span></div>
+          <div class="console-tela"><p><b class="acao">Enviar</b> <code>Termos de uso.pdf</code>.</p></div>
+          <div class="console-path"><span class="console-lbl">Depois</span><span class="ui">Knowledge Bases</span><i>›</i><span class="ui">knowledge-base-quick-start-2d1lr</span><i>›</i><span class="ui">Data source</span><i>›</i><span class="ui">Add</span></div>
+          <div class="console-tela">
+            <table class="console-campos">
+              <thead><tr><th>Campo na tela</th><th>O que fazer</th><th>Para quê</th></tr></thead>
+              <tbody>
+                <tr><td>Data source type</td><td><b class="acao">Selecionar</b> <span class="ui">Amazon S3</span> · <span class="ui">This AWS account</span></td><td>Nova origem de documentos</td></tr>
+                <tr><td>S3 URI</td><td><b class="acao">Clicar</b> <span class="ui">Browse S3</span> › <code>Termos de uso.pdf</code> › <span class="ui">Choose</span></td><td>Aponta para o arquivo novo</td></tr>
+                <tr><td>Text chunking strategy</td><td><b class="acao">Manter</b> <span class="ui">Default chunking</span></td><td>Mesmo padrão do primeiro documento</td></tr>
+              </tbody>
+            </table>
+            <p class="console-fim"><b class="acao">Clicar</b> <kbd class="ui-btn">Add</kbd>, selecionar o data source novo e <b class="acao">clicar</b> <kbd class="ui-btn">Sync</kbd></p>
+          </div>
+        </div>
+        <div class="out good"><span class="out-label">Resposta esperada</span><pre>Data sources (2) · Sync status: Completed</pre></div>
+        <div class="note n-tip"><b>Atualizar um PDF</b>
+          <p>Para trocar o conteúdo de um documento: apague o arquivo antigo, envie o novo e rode o <span class="ui">Sync</span> de novo.</p>
+        </div>
+        <div class="check"><div class="check-label">Checklist</div><ul>
+          <li><label><input type="checkbox"><span><code>Termos de uso.pdf</code> no bucket</span></label></li>
+          <li><label><input type="checkbox"><span>2 data sources, sync concluído</span></label></li>
+        </ul></div>
+      </div>
+      <div class="recap" data-phase="2">
+        <div class="recap-head">Onde você está · fim da Fase 2</div>
+        <div class="ascii arch recap-map"><div class="arch-svg"></div><div class="arch-leg"><span class="d-done">já feito</span><span class="d-now">■ esta fase</span><span class="d-next">■ próxima fase</span><span class="d-todo">■ depois</span></div></div>
+        <dl class="recap-txt">
+          <dt>O que foi feito</dt><dd>A base <code>4SCLDZ9ZTH</code> nasceu do tipo managed, respondeu no Console e passou a ter 2 documentos.</dd>
+          <dt>Como</dt><dd><ol class="recap-passos"><li>Criou a base apontando para o bucket (2.1).</li><li>Testou com "Tem trilhas?" (2.2).</li><li>Acrescentou os Termos de uso e sincronizou (2.3).</li></ol></dd>
+          <dt>Termos</dt><dd><ul class="recap-termos"><li><b>Chunking</b> · dividir o documento em trechos menores.</li><li><b>Embedding</b> · vetor de números que representa o significado de um trecho.</li><li><b>Sync</b> · leitura e indexação dos documentos do data source.</li></ul></dd>
+          <dt>Por que importa</dt><dd>O pipeline de ingestão inteiro (PDF → trechos → vetores → índice) está pronto, sem uma linha de código.</dd>
+        </dl>
+        <p class="recap-next"><b>Próxima</b> <a href="#p3">Fase 3 · Embeddings no notebook</a></p>
+      </div>
+    </section>
+
+    <!-- ================================================================ F3 -->
+    <section class="phase" id="p3" data-group="RAG via código" data-title="Embeddings no notebook">
+      <div class="phase-head">
+        <span class="phase-n">FASE 3</span>
+        <div>
+          <h2>Por dentro da base: embeddings, PCA e similaridade no notebook</h2>
+          <p>Antes de usar a busca pronta, o notebook refaz o processo à mão com oito frases, para entender o que a base faz com os PDFs.</p>
+        </div>
+        <span class="phase-count" data-count-for="p3"></span>
+      </div>
+
+      <div class="ascii arch fase-map"><div class="arch-cap">Arquitetura · o que esta fase constrói</div><div class="arch-svg" data-fase="3"></div><div class="arch-leg"><span class="d-done">já feito</span><span class="d-now">■ esta fase</span><span class="d-next">■ próxima fase</span><span class="d-todo">■ depois</span></div></div>
+
+      <div class="step" id="passo-3-1">
+        <div class="step-top"><a class="step-id" href="#passo-3-1">3.1</a><h3>Instalar as bibliotecas e criar a sessão</h3><span class="where w-wsl" title="Notebook Amazon Bedrock curso - RAG">NOTEBOOK</span></div>
+        <div class="why"><b>Por quê</b> Uma única <code>boto3.Session</code>, criada com as credenciais do CSV, dá origem a todos os clientes da AWS: a configuração fica num lugar só.</div>
+        <div class="cmd"><span class="cmd-label">Célula do notebook</span><button class="copy" type="button">copiar</button><pre>%pip install boto3 numpy matplotlib scikit-learn</pre></div>
+        <div class="cmd"><span class="cmd-label">Célula do notebook</span><button class="copy" type="button">copiar</button><pre>import csv
+import json
+import boto3
+import numpy as np
+import matplotlib.pyplot as plt
+from sklearn.decomposition import PCA
+
+# Lendo as credenciais do arquivo CSV gerado pelo IAM (fora do código)
+with open("curso_bedrock_accessKeys.csv", encoding="utf-8-sig") as f:
+    credenciais = next(csv.DictReader(f))
+
+# Sessão única: todos os serviços da AWS são criados a partir dela
+session = boto3.Session(
+    aws_access_key_id=credenciais["Access key ID"],
+    aws_secret_access_key=credenciais["Secret access key"],
+    region_name="us-east-1",
+)</pre></div>
+        <div class="note n-tip"><b>Por que <code>utf-8-sig</code></b>
+          <p>O CSV baixado do IAM pode começar com um caractere invisível (BOM). Com <code>utf-8-sig</code>, o nome da coluna fica <code>Access key ID</code>, sem lixo na frente.</p>
+        </div>
+        <div class="check"><div class="check-label">Checklist</div><ul>
+          <li><label><input type="checkbox"><span>Bibliotecas instaladas no kernel do notebook</span></label></li>
+          <li><label><input type="checkbox"><span><code>session</code> criada sem erro</span></label></li>
+        </ul></div>
+      </div>
+
+      <div class="step" id="passo-3-2">
+        <div class="step-top"><a class="step-id" href="#passo-3-2">3.2</a><h3>Gerar embeddings com o Titan</h3><span class="where w-wsl" title="Notebook Amazon Bedrock curso - RAG">NOTEBOOK</span></div>
+        <div class="why"><b>Por quê</b> É o mesmo tipo de operação que a base faz com cada trecho do PDF (seta C do mapa): texto entra, vetor sai.</div>
+        <div class="cmd"><span class="cmd-label">Célula do notebook</span><button class="copy" type="button">copiar</button><pre>bedrock_runtime = session.client(service_name='bedrock-runtime')
+
+def generate_embedding(text):
+    body = json.dumps({"inputText": text})
+    response = bedrock_runtime.invoke_model(
+        modelId="amazon.titan-embed-text-v2:0",
+        body=body,
+        contentType="application/json",
+        accept="application/json"
+    )
+    result = json.loads(response["body"].read())
+    return result["embedding"]
+
+texts = [
+    "O plano mensal custa R$24,90.",
+    "O plano anual oferece economia para o aluno.",
+    "Machine Learning permite criar modelos preditivos.",
+    "Deep Learning utiliza redes neurais artificiais.",
+    "Projetos práticos ajudam na construção de portfólio.",
+    "Agentes de IA podem automatizar tarefas.",
+    "IA trilha de Machine Learning possui vários cursos.",
+    "A trilha de Deep Learning aborda redes neurais."
+]
+embeddings = [generate_embedding(t) for t in texts]
+print(len(embeddings), "vetores de", len(embeddings[0]), "dimensões")</pre></div>
+        <div class="out good"><span class="out-label">Resposta esperada</span><pre>8 vetores de 1024 dimensões</pre></div>
+        <div class="check"><div class="check-label">Checklist</div><ul>
+          <li><label><input type="checkbox"><span>8 vetores de 1024 números gerados</span></label></li>
+        </ul></div>
+      </div>
+
+      <div class="step" id="passo-3-3">
+        <div class="step-top"><a class="step-id" href="#passo-3-3">3.3</a><h3>Ver os vetores em 2D com PCA</h3><span class="where w-wsl" title="Notebook Amazon Bedrock curso - RAG">NOTEBOOK</span></div>
+        <div class="why"><b>Por quê</b> Não dá para desenhar 1024 dimensões. O PCA reduz para 2 mantendo o máximo da variação, e o gráfico mostra se frases do mesmo assunto ficam perto.</div>
+        <div class="cmd"><span class="cmd-label">Célula do notebook</span><button class="copy" type="button">copiar</button><pre>pca = PCA(n_components=2)
+reduce_vectors = pca.fit_transform(np.array(embeddings))
+
+plt.figure(figsize=(10, 7))
+for i, (x, y) in enumerate(reduce_vectors):
+    plt.scatter(x, y)
+    plt.annotate(f"T{i+1}", (x, y))
+plt.title("Visualização PCA dos Embeddings")
+plt.grid(True)
+plt.show()</pre></div>
+        <div class="out good"><span class="out-label">Resposta esperada</span><pre>Grupos próximos no gráfico:
+T1 e T2 (planos) · T4 e T8 (Deep Learning) · T3 e T7 (Machine Learning)</pre></div>
+        <div class="check"><div class="check-label">Checklist</div><ul>
+          <li><label><input type="checkbox"><span>Gráfico gerado; frases do mesmo assunto aparecem próximas</span></label></li>
+        </ul></div>
+      </div>
+
+      <div class="step" id="passo-3-4">
+        <div class="step-top"><a class="step-id" href="#passo-3-4">3.4</a><h3>Buscar por significado (similaridade de cosseno)</h3><span class="where w-wsl" title="Notebook Amazon Bedrock curso - RAG">NOTEBOOK</span></div>
+        <div class="why"><b>Por quê</b> É a etapa de <i>retrieval</i> do RAG em miniatura: a pergunta vira vetor e é comparada com os vetores das frases.</div>
+        <div class="cmd"><span class="cmd-label">Célula do notebook</span><button class="copy" type="button">copiar</button><pre>from sklearn.metrics.pairwise import cosine_similarity
+
+query = "Como funciona o plano de assinatura"
+query_embedding = np.array(generate_embedding(query)).reshape(1, -1)
+
+similaridades = cosine_similarity(query_embedding, embeddings)[0]
+for text, score in sorted(zip(texts, similaridades), key=lambda x: x[1], reverse=True):
+    print(f"{score: .4f} -> {text}")</pre></div>
+        <div class="out good"><span class="out-label">Resposta esperada</span><pre> 0.3068 -> O plano anual oferece economia para o aluno.
+ 0.2390 -> O plano mensal custa R$24,90.
+ 0.1422 -> Projetos práticos ajudam na construção de portfólio.
+ …</pre></div>
+        <div class="note n-tip"><b>Leitura do resultado</b>
+          <p>As frases sobre planos ficaram no topo sem a pergunta conter "mensal", "anual" ou "custa". Isso é busca por significado, e não por palavra-chave.</p>
+        </div>
+        <div class="note n-warn"><b>Armadilha comum</b>
+          <p>Pergunta e documentos precisam usar o <b>mesmo modelo</b> de embedding: vetores de modelos diferentes não são comparáveis.</p>
+        </div>
+        <div class="check"><div class="check-label">Checklist</div><ul>
+          <li><label><input type="checkbox"><span>Ranking gerado, com as frases de planos no topo</span></label></li>
+        </ul></div>
+      </div>
+      <div class="recap" data-phase="3">
+        <div class="recap-head">Onde você está · fim da Fase 3</div>
+        <div class="ascii arch recap-map"><div class="arch-svg"></div><div class="arch-leg"><span class="d-done">já feito</span><span class="d-now">■ esta fase</span><span class="d-next">■ próxima fase</span><span class="d-todo">■ depois</span></div></div>
+        <dl class="recap-txt">
+          <dt>O que foi feito</dt><dd>O notebook conectou à AWS, gerou embeddings com o Titan, desenhou os vetores com PCA e fez uma busca por similaridade.</dd>
+          <dt>Como</dt><dd><ol class="recap-passos"><li>Sessão criada a partir do CSV (3.1).</li><li><code>invoke_model</code> com o Titan (3.2).</li><li>PCA para 2 dimensões (3.3).</li><li>Similaridade de cosseno (3.4).</li></ol></dd>
+          <dt>Termos</dt><dd><ul class="recap-termos"><li><b>Dimensão</b> · quantidade de números do vetor (1024 no Titan V2).</li><li><b>PCA</b> · reduz dimensões para visualizar.</li><li><b>Similaridade de cosseno</b> · quanto dois vetores apontam na mesma direção (perto de 1 = parecidos).</li></ul></dd>
+          <dt>Por que importa</dt><dd>Entender a busca vetorial explica por que uma resposta do RAG sai boa ou ruim.</dd>
+        </dl>
+        <p class="recap-next"><b>Próxima</b> <a href="#p4">Fase 4 · RAG em duas etapas</a></p>
+      </div>
+    </section>
+
+    <!-- ================================================================ F4 -->
+    <section class="phase" id="p4" data-group="RAG via código" data-title="RAG em duas etapas">
+      <div class="phase-head">
+        <span class="phase-n">FASE 4</span>
+        <div>
+          <h2>O RAG via código: <code>retrieve</code> + <code>converse</code></h2>
+          <p>A função <code>ask</code> busca os trechos na base (setas 2 e 3), monta o prompt e pede a resposta ao Nova Micro (setas 4 e 5).</p>
+        </div>
+        <span class="phase-count" data-count-for="p4"></span>
+      </div>
+
+      <div class="ascii arch fase-map"><div class="arch-cap">Arquitetura · o que esta fase constrói</div><div class="arch-svg" data-fase="4"></div><div class="arch-leg"><span class="d-done">já feito</span><span class="d-now">■ esta fase</span><span class="d-next">■ próxima fase</span><span class="d-todo">■ depois</span></div></div>
+
+      <div class="step" id="passo-4-1">
+        <div class="step-top"><a class="step-id" href="#passo-4-1">4.1</a><h3>Configurar a base, o modelo e os dois clientes</h3><span class="where w-wsl" title="Notebook Amazon Bedrock curso - RAG">NOTEBOOK</span></div>
+        <div class="why"><b>Por quê</b> Cada etapa usa um cliente: <code>bedrock-agent-runtime</code> busca na base; <code>bedrock-runtime</code> executa o modelo.</div>
+        <div class="cmd"><span class="cmd-label">Célula do notebook</span><button class="copy" type="button">copiar</button><pre>Knowledge_Base_ID = "4SCLDZ9ZTH"
+# Perfil de inferência do Nova Micro (prefixo us.), usado na Converse API
+Model_ID = "us.amazon.nova-micro-v1:0"
+
+# Busca na Knowledge Base
+bedrock_agent_runtime = session.client(service_name='bedrock-agent-runtime')
+# Geração da resposta
+bedrock_runtime = session.client(service_name='bedrock-runtime')</pre></div>
+        <div class="note n-warn"><b>Armadilha comum</b>
+          <p>Salvar o cliente <code>bedrock-agent-runtime</code> na variável <code>bedrock_runtime</code>: ele sobrescreve o cliente de execução, e a geração quebra com</p>
+          <pre>AttributeError: 'AgentsforBedrockRuntime' object has no attribute 'converse'</pre>
+          <p>Cada cliente precisa do seu próprio nome.</p>
+        </div>
+        <div class="check"><div class="check-label">Checklist</div><ul>
+          <li><label><input type="checkbox"><span>ID da base e do modelo configurados</span></label></li>
+          <li><label><input type="checkbox"><span>Dois clientes, com nomes diferentes</span></label></li>
+        </ul></div>
+      </div>
+
+      <div class="step" id="passo-4-2">
+        <div class="step-top"><a class="step-id" href="#passo-4-2">4.2</a><h3>Escrever a função <code>ask</code></h3><span class="where w-wsl" title="Notebook Amazon Bedrock curso - RAG">NOTEBOOK</span></div>
+        <div class="why"><b>Por quê</b> A base managed não aceita a chamada única <code>retrieve_and_generate</code> da aula. Separar busca e geração resolve, e ainda mostra cada etapa do RAG.</div>
+        <div class="cmd"><span class="cmd-label">Célula do notebook</span><button class="copy" type="button">copiar</button><pre>def ask(question, n_resultados=5):
+    # 1. Retrieval: base managed usa managedSearchConfiguration
+    retrieval = bedrock_agent_runtime.retrieve(
+        knowledgeBaseId=Knowledge_Base_ID,
+        retrievalQuery={"text": question},
+        retrievalConfiguration={
+            "managedSearchConfiguration": {"numberOfResults": n_resultados}
+        }
+    )
+    resultados = retrieval["retrievalResults"]
+    trechos = [r["content"]["text"] for r in resultados]
+    contexto = "\n\n".join(trechos)
+
+    # 2. Generation: o modelo responde usando apenas o contexto recuperado
+    prompt = (
+        "Responda à pergunta usando somente as informações do contexto abaixo. "
+        "Se a resposta não estiver no contexto, diga que não sabe.\n\n"
+        f"Contexto:\n{contexto}\n\nPergunta: {question}"
+    )
+    response = bedrock_runtime.converse(
+        modelId=Model_ID,
+        messages=[{"role": "user", "content": [{"text": prompt}]}],
+        inferenceConfig={"maxTokens": 512, "temperature": 0.2}
+    )
+    texto_resposta = response["output"]["message"]["content"][0]["text"]
+
+    # 3. Citações no mesmo formato do retrieve_and_generate
+    citations = [{
+        "generatedResponsePart": {"textResponsePart": {"text": texto_resposta}},
+        "retrievedReferences": [
+            {"content": r["content"], "location": r.get("location"),
+             "metadata": r.get("metadata", {}), "score": r.get("score")}
+            for r in resultados
+        ]
+    }]
+
+    return {"output": {"text": texto_resposta}, "citations": citations, "trechos": trechos}</pre></div>
+        <details class="fallback">
+          <summary>Os erros que apareceram no caminho (e a correção de cada um)</summary>
+          <div class="tablewrap"><table>
+            <thead><tr><th>Mensagem</th><th>Causa</th><th>Correção</th></tr></thead>
+            <tbody>
+              <tr><td><code>ParamValidationError: Unknown parameter ... retrieveAndGenerateConfig</code></td><td>Nome do parâmetro incompleto</td><td><code>retrieveAndGenerateConfiguration</code> e <code>knowledgeBaseConfiguration</code> (com <b>k</b> minúsculo)</td></tr>
+              <tr><td><code>ValidationException: This operation is not supported for managed knowledge bases.</code></td><td>Base managed não aceita <code>retrieve_and_generate</code></td><td>Usar <code>retrieve</code> + <code>converse</code></td></tr>
+              <tr><td><code>vectorSearchConfiguration is not supported for managed knowledge bases. Use managedSearchConfiguration instead.</code></td><td>Configuração da busca do tipo errado</td><td><code>managedSearchConfiguration</code>: a própria mensagem diz o nome certo</td></tr>
+              <tr><td><code>AttributeError: ... has no attribute 'converse'</code></td><td>Cliente errado na variável</td><td>Ver passo <a href="#passo-4-1">4.1</a></td></tr>
+              <tr><td><code>KeyError: 'citations'</code> / <code>'retrivalResults'</code></td><td>Chave inexistente ou com erro de digitação</td><td>Devolver <code>citations</code> na função; escrever <code>retrievalResults</code></td></tr>
+            </tbody>
+          </table></div>
+        </details>
+        <div class="check"><div class="check-label">Checklist</div><ul>
+          <li><label><input type="checkbox"><span>Função <code>ask</code> criada com <code>retrieve</code> + <code>converse</code></span></label></li>
+        </ul></div>
+      </div>
+
+      <div class="step" id="passo-4-3">
+        <div class="step-top"><a class="step-id" href="#passo-4-3">4.3</a><h3>Testar, ver as citações e o score</h3><span class="where w-wsl" title="Notebook Amazon Bedrock curso - RAG">NOTEBOOK</span></div>
+        <div class="why"><b>Por quê</b> As citações mostram em quais trechos a resposta se baseou; o score mostra se a busca encontrou o trecho certo.</div>
+        <div class="cmd"><span class="cmd-label">Célula do notebook</span><button class="copy" type="button">copiar</button><pre>answer = ask("Quais são as trilhas?")
+print(answer["output"]["text"])
+
+# Trecho do PDF usado como referência
+print(answer["citations"][0]["retrievedReferences"][0]["content"]["text"])
+
+# Só a busca, para ver o score de cada trecho
+response = bedrock_agent_runtime.retrieve(
+    knowledgeBaseId=Knowledge_Base_ID,
+    retrievalQuery={"text": "Quais cursos são mencionados?"}
+)
+for result in response["retrievalResults"]:
+    print(f"Score: {result.get('score')} | {result['content']['text'][:80]}")</pre></div>
+        <div class="out good"><span class="out-label">Resposta esperada (primeiro print)</span><pre>As trilhas de aprendizagem disponíveis na IA Expert Academy são:
+1. Machine Learning
+2. Redes Neurais e Deep Learning
+3. Visão Computacional
+4. Processamento de Linguagem Natural
+5. Algoritmos de Inteligência Artificial</pre></div>
+        <div class="note n-warn"><b>Quando a resposta sai fraca</b>
+          <p>Para "Quais cursos fazem parte da trilha de IA?", o modelo disse que a lista não estava no contexto e completou com temas genéricos. A busca não trouxe o trecho certo. Confira as citações e o score, reformule a pergunta ou use <code>ask(pergunta, n_resultados=10)</code>.</p>
+        </div>
+        <div class="check"><div class="check-label">Checklist</div><ul>
+          <li><label><input type="checkbox"><span>Resposta gerada a partir do PDF</span></label></li>
+          <li><label><input type="checkbox"><span>Citações e scores conferidos</span></label></li>
+        </ul></div>
+      </div>
+      <div class="recap" data-phase="4">
+        <div class="recap-head">Onde você está · fim da Fase 4</div>
+        <div class="ascii arch recap-map"><div class="arch-svg"></div><div class="arch-leg"><span class="d-done">já feito</span><span class="d-now">■ esta fase</span><span class="d-next">■ próxima fase</span><span class="d-todo">■ depois</span></div></div>
+        <dl class="recap-txt">
+          <dt>O que foi feito</dt><dd>O RAG funciona de ponta a ponta no notebook: pergunta → trechos da base → resposta do Nova Micro, com citações.</dd>
+          <dt>Como</dt><dd><ol class="recap-passos"><li>Dois clientes com nomes próprios (4.1).</li><li>Função <code>ask</code> com <code>retrieve</code> + <code>converse</code> (4.2).</li><li>Teste, citações e score (4.3).</li></ol></dd>
+          <dt>Termos</dt><dd><ul class="recap-termos"><li><b>Retrieval</b> · buscar os trechos relevantes.</li><li><b>Generation</b> · gerar a resposta com eles.</li><li><b>Inference profile</b> · ID com prefixo <code>us.</code>, que roteia o modelo entre regiões.</li></ul></dd>
+          <dt>Por que importa</dt><dd>Se a busca falha, o melhor modelo não salva a resposta. As citações deixam isso visível.</dd>
+        </dl>
+        <p class="recap-next"><b>Próxima</b> <a href="#p5">Fase 5 · Interface Streamlit</a></p>
+      </div>
+    </section>
+
+    <!-- ================================================================ F5 -->
+    <section class="phase" id="p5" data-group="Interface" data-title="Interface Streamlit">
+      <div class="phase-head">
+        <span class="phase-n">FASE 5</span>
+        <div>
+          <h2>A interface: um chat no navegador com Streamlit</h2>
+          <p>O RAG da Fase 4 vira uma aplicação web. O usuário pergunta no chat (seta 1) e vê a resposta com as fontes.</p>
+        </div>
+        <span class="phase-count" data-count-for="p5"></span>
+      </div>
+
+      <div class="ascii arch fase-map"><div class="arch-cap">Arquitetura · o que esta fase constrói</div><div class="arch-svg" data-fase="5"></div><div class="arch-leg"><span class="d-done">já feito</span><span class="d-now">■ esta fase</span><span class="d-next">■ próxima fase</span><span class="d-todo">■ depois</span></div></div>
+
+      <div class="step" id="passo-5-1">
+        <div class="step-top"><a class="step-id" href="#passo-5-1">5.1</a><h3>Criar o <code>app.py</code></h3><span class="where w-wsl" title="Notebook Amazon Bedrock curso - Interface Gráfica com Streamlit">NOTEBOOK</span></div>
+        <div class="why"><b>Por quê</b> O Streamlit roda a partir de um arquivo <code>.py</code>. O <code>%%writefile app.py</code> grava a célula como arquivo, na pasta do notebook.</div>
+        <div class="cmd"><span class="cmd-label">Célula do notebook</span><button class="copy" type="button">copiar</button><pre>%pip install streamlit boto3</pre></div>
+        <div class="cmd"><span class="cmd-label">Célula do notebook</span><button class="copy" type="button">copiar</button><pre>%%writefile app.py
+
+import csv
+from pathlib import Path
+
+import boto3
+import streamlit as st
+from botocore.exceptions import BotoCoreError, ClientError
+
+# ------------------------------------------------------------------
+# 1. Configurações (as mesmas do notebook de RAG)
+# ------------------------------------------------------------------
+KNOWLEDGE_BASE_ID = "4SCLDZ9ZTH"
+MODEL_ID = "us.amazon.nova-micro-v1:0"
+REGION = "us-east-1"
+# O CSV de credenciais fica na mesma pasta do app.py (fora do código)
+ARQUIVO_CREDENCIAIS = Path(__file__).parent / "curso_bedrock_accessKeys.csv"
+
+st.set_page_config(
+    page_title="Assistente IA Expert Academy",
+    page_icon="🤖",
+    layout="wide"
+)
+
+
+# ------------------------------------------------------------------
+# 2. Conexão com a AWS
+# ------------------------------------------------------------------
+# O Streamlit reexecuta o script a cada interação. O cache_resource
+# faz os clientes serem criados uma única vez e reaproveitados.
+@st.cache_resource
+def criar_clientes():
+    with open(ARQUIVO_CREDENCIAIS, encoding="utf-8-sig") as f:
+        credenciais = next(csv.DictReader(f))
+
+    session = boto3.Session(
+        aws_access_key_id=credenciais["Access key ID"],
+        aws_secret_access_key=credenciais["Secret access key"],
+        region_name=REGION,
+    )
+    # bedrock-agent-runtime: busca na Knowledge Base | bedrock-runtime: geração da resposta
+    return session.client("bedrock-agent-runtime"), session.client("bedrock-runtime")
+
+
+# ------------------------------------------------------------------
+# 3. RAG em duas etapas: busca + geração
+# ------------------------------------------------------------------
+def ask(question, n_resultados=5, temperature=0.2):
+    bedrock_agent_runtime, bedrock_runtime = criar_clientes()
+
+    # Retrieval: a base é "Bedrock Managed", por isso usa managedSearchConfiguration
+    retrieval = bedrock_agent_runtime.retrieve(
+        knowledgeBaseId=KNOWLEDGE_BASE_ID,
+        retrievalQuery={"text": question},
+        retrievalConfiguration={
+            "managedSearchConfiguration": {"numberOfResults": n_resultados}
+        }
+    )
+    resultados = retrieval["retrievalResults"]
+
+    # Sem trechos encontrados não há contexto, então nem chamamos o modelo
+    if not resultados:
+        return {
+            "resposta": "Não encontrei informações sobre isso na base de conhecimento.",
+            "fontes": []
+        }
+
+    contexto = "\n\n".join(r["content"]["text"] for r in resultados)
+
+    # Generation: o modelo responde usando apenas o contexto recuperado
+    prompt = (
+        "Responda à pergunta usando somente as informações do contexto abaixo. "
+        "Se a resposta não estiver no contexto, diga que não sabe.\n\n"
+        f"Contexto:\n{contexto}\n\nPergunta: {question}"
+    )
+    response = bedrock_runtime.converse(
+        modelId=MODEL_ID,
+        messages=[{"role": "user", "content": [{"text": prompt}]}],
+        inferenceConfig={"maxTokens": 512, "temperature": temperature}
+    )
+
+    return {
+        "resposta": response["output"]["message"]["content"][0]["text"],
+        "fontes": resultados
+    }
+
+
+# ------------------------------------------------------------------
+# 4. Exibição das fontes (citações)
+# ------------------------------------------------------------------
+def mostrar_fontes(fontes):
+    if not fontes:
+        return
+
+    with st.expander(f"📄 Fontes ({len(fontes)} trechos)"):
+        for i, fonte in enumerate(fontes, start=1):
+            uri = (fonte.get("location") or {}).get("s3Location", {}).get("uri", "")
+            arquivo = uri.rsplit("/", 1)[-1] if uri else "documento"
+            pagina = (fonte.get("metadata") or {}).get("x-amz-bedrock-kb-document-page-number")
+            score = fonte.get("score")
+
+            titulo = f"**Trecho {i}** · {arquivo}"
+            if pagina is not None:
+                titulo += f" · página {int(float(pagina))}"
+            if score is not None:
+                titulo += f" · score {score:.3f}"
+
+            st.markdown(titulo)
+            st.caption(fonte["content"]["text"])
+
+
+# ------------------------------------------------------------------
+# 5. Interface
+# ------------------------------------------------------------------
+st.title("🤖 Assistente IA Expert Academy")
+st.caption("Pergunte sobre cursos, trilhas, planos e termos de uso da IA Expert Academy.")
+
+# O histórico fica no session_state para sobreviver às reexecuções do script
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+with st.sidebar:
+    st.header("⚙️ Configurações")
+    n_resultados = st.slider("Trechos buscados na base", min_value=1, max_value=10, value=5)
+    temperature = st.slider("Temperature", min_value=0.0, max_value=1.0, value=0.2, step=0.1)
+
+    if st.button("🗑️ Limpar conversa"):
+        st.session_state.messages = []
+        st.rerun()
+
+    st.divider()
+    st.caption(f"Base de conhecimento: `{KNOWLEDGE_BASE_ID}`  \nModelo: `{MODEL_ID}`")
+
+# Reexibe o histórico da conversa
+for message in st.session_state.messages:
+    with st.chat_message(message["role"]):
+        st.markdown(message["content"])
+        mostrar_fontes(message.get("fontes"))
+
+if prompt := st.chat_input("Digite sua pergunta"):
+    # Usuário
+    st.session_state.messages.append({"role": "user", "content": prompt})
+    with st.chat_message("user"):
+        st.markdown(prompt)
+
+    # Assistente
+    with st.chat_message("assistant"):
+        with st.spinner("Consultando a base de conhecimento..."):
+            try:
+                resultado = ask(prompt, n_resultados=n_resultados, temperature=temperature)
+            except FileNotFoundError:
+                st.error(f"Arquivo de credenciais não encontrado: `{ARQUIVO_CREDENCIAIS.name}`")
+            except (ClientError, BotoCoreError) as erro:
+                st.error(f"Erro ao consultar a AWS: {erro}")
+            else:
+                st.markdown(resultado["resposta"])
+                mostrar_fontes(resultado["fontes"])
+                st.session_state.messages.append({
+                    "role": "assistant",
+                    "content": resultado["resposta"],
+                    "fontes": resultado["fontes"]
+                })</pre></div>
+        <div class="tablewrap"><table>
+          <thead><tr><th>Peça</th><th>Para que serve</th></tr></thead>
+          <tbody>
+            <tr><td><code>st.session_state</code></td><td>O Streamlit reexecuta o script a cada interação; o histórico do chat sobrevive aqui.</td></tr>
+            <tr><td><code>@st.cache_resource</code></td><td>Cria os clientes da AWS uma única vez.</td></tr>
+            <tr><td><code>st.chat_input</code> / <code>st.chat_message</code></td><td>Campo de pergunta e balões do chat.</td></tr>
+            <tr><td><code>st.expander</code></td><td>Mostra as fontes: arquivo, página, score e texto.</td></tr>
+            <tr><td><code>try / except</code> + <code>st.error</code></td><td>Erro da AWS vira mensagem na tela, em vez de quebrar a aplicação.</td></tr>
+          </tbody>
+        </table></div>
+        <div class="check"><div class="check-label">Checklist</div><ul>
+          <li><label><input type="checkbox"><span><code>app.py</code> gravado na pasta do projeto, ao lado do CSV</span></label></li>
+        </ul></div>
+      </div>
+
+      <div class="step" id="passo-5-2">
+        <div class="step-top"><a class="step-id" href="#passo-5-2">5.2</a><h3>Rodar a interface</h3><span class="where w-ssm" title="Terminal do VS Code">TERMINAL</span></div>
+        <div class="why"><b>Por quê</b> O Streamlit é um servidor web que fica rodando: pelo notebook, a célula ficaria travada. Por isso ele roda no terminal.</div>
+        <div class="cmd"><span class="cmd-label">No terminal, na pasta do projeto</span><button class="copy" type="button">copiar</button><pre><span class="p">&gt; </span>python -m streamlit run app.py</pre></div>
+        <div class="out good"><span class="out-label">Resposta esperada</span><pre>You can now view your Streamlit app in your browser.
+Local URL: http://localhost:8501</pre></div>
+        <div class="note n-warn"><b>Armadilha comum</b>
+          <pre>'streamlit' não é reconhecido como um comando interno ou externo</pre>
+          <p>O <code>%pip</code> instalou o Streamlit na pasta do usuário (<code>AppData\Roaming\Python\...\Scripts</code>), que não está no PATH do Windows. Com <code>python -m streamlit</code>, o Python encontra o módulo direto.</p>
+        </div>
+        <div class="check"><div class="check-label">Checklist</div><ul>
+          <li><label><input type="checkbox"><span>Interface aberta em <code>http://localhost:8501</code></span></label></li>
+        </ul></div>
+      </div>
+
+      <div class="step" id="passo-5-3">
+        <div class="step-top"><a class="step-id" href="#passo-5-3">5.3</a><h3>Testar no navegador</h3><span class="where w-web" title="Navegador">NAVEGADOR</span></div>
+        <div class="why"><b>Por quê</b> Cada teste confere uma peça diferente do mapa.</div>
+        <div class="tablewrap"><table>
+          <thead><tr><th>Teste</th><th>O que observar</th></tr></thead>
+          <tbody>
+            <tr><td>"Quais são as trilhas?"</td><td>A resposta lista as trilhas; o expander <b>Fontes</b> mostra os trechos do PDF.</td></tr>
+            <tr><td>"Qual o plano mais barato?"</td><td>Plano Mensal, R$ 24,90.</td></tr>
+            <tr><td>"Qual a capital da França?"</td><td>O modelo deve dizer que não sabe: a resposta não está no contexto.</td></tr>
+            <tr><td>Slider <b>Trechos buscados</b></td><td>Mais trechos = mais contexto (e mais tokens).</td></tr>
+            <tr><td>Botão <b>Limpar conversa</b></td><td>O histórico é apagado.</td></tr>
+          </tbody>
+        </table></div>
+        <div class="note n-tip"><b>Limitação conhecida</b>
+          <p>O histórico aparece na tela, mas não é enviado ao modelo: cada pergunta é respondida sozinha, então "e a segunda?" não funciona.</p>
+        </div>
+        <div class="check"><div class="check-label">Checklist</div><ul>
+          <li><label><input type="checkbox"><span>Respostas com fontes no chat</span></label></li>
+          <li><label><input type="checkbox"><span>Pergunta fora do PDF respondida com "não sei"</span></label></li>
+        </ul></div>
+      </div>
+      <div class="recap" data-phase="5">
+        <div class="recap-head">Onde você está · fim da Fase 5</div>
+        <div class="ascii arch recap-map"><div class="arch-svg"></div><div class="arch-leg"><span class="d-done">já feito</span><span class="d-now">■ esta fase</span><span class="d-next">■ próxima fase</span><span class="d-todo">■ depois</span></div></div>
+        <dl class="recap-txt">
+          <dt>O que foi feito</dt><dd>A arquitetura completa: chat no navegador → RAG → resposta com as fontes.</dd>
+          <dt>Como</dt><dd><ol class="recap-passos"><li>Gravou o <code>app.py</code> (5.1).</li><li>Rodou com <code>python -m streamlit run app.py</code> (5.2).</li><li>Testou as respostas e as fontes (5.3).</li></ol></dd>
+          <dt>Termos</dt><dd><ul class="recap-termos"><li><b>Streamlit</b> · transforma um script Python em aplicação web.</li><li><b>session_state</b> · memória da página entre as reexecuções.</li></ul></dd>
+          <dt>Por que importa</dt><dd>O projeto sai do notebook e vira algo que qualquer pessoa usa no navegador.</dd>
+        </dl>
+        <p class="recap-next"><b>Próxima</b> <a href="#p6">Fase 6 · Limpeza</a></p>
+      </div>
+    </section>
+
+    <!-- ================================================================ F6 -->
+    <section class="phase" id="p6" data-group="Encerramento" data-title="Limpeza">
+      <div class="phase-head">
+        <span class="phase-n">FASE 6</span>
+        <div>
+          <h2>Limpeza: apagar o que custa e o que é risco</h2>
+          <p>A base managed cobra pelo armazenamento, e a chave de acesso é um risco enquanto existir. Apague na ordem: base, bucket e, por último, a chave.</p>
+        </div>
+        <span class="phase-count" data-count-for="p6"></span>
+      </div>
+
+      <div class="ascii arch fase-map"><div class="arch-cap">Arquitetura · o que esta fase remove</div><div class="arch-svg" data-fase="6"></div><div class="arch-leg"><span class="d-done">permanece</span><span class="d-gone">■ removido nesta fase</span><span class="d-todo">■ deixa de funcionar</span></div></div>
+
+      <div class="note n-warn"><b>Custos</b>
+        <p>Base managed: cerca de <b>US$ 5 por GB por mês</b> de armazenamento (com ~0,2 MB de PDFs, menos de 1 centavo), mais as buscas e os tokens dos modelos por uso. Este projeto <b>não</b> cria OpenSearch Serverless nem Provisioned Throughput, os recursos que cobram por hora.</p>
+      </div>
+
+      <div class="step" id="passo-6-1">
+        <div class="step-top"><a class="step-id" href="#passo-6-1">6.1</a><h3>Apagar os recursos</h3><span class="where w-console" title="Console da AWS">CONSOLE</span></div>
+        <div class="tablewrap"><table>
+          <thead><tr><th>Ordem</th><th>Onde</th><th>O que apagar</th></tr></thead>
+          <tbody>
+            <tr><td>1</td><td>Amazon Bedrock › Knowledge Bases</td><td><code>knowledge-base-quick-start-2d1lr</code> › <span class="ui">Delete</span></td></tr>
+            <tr><td>2</td><td>Amazon S3 › Buckets</td><td><code>curso-bedrock-s3</code> › <span class="ui">Empty</span> e depois <span class="ui">Delete</span> (baixe os PDFs antes, se quiser)</td></tr>
+            <tr><td>3</td><td>IAM › Users › curso_bedrock › Security credentials</td><td>Chave de acesso › <span class="ui">Actions</span> › <span class="ui">Deactivate</span> e depois <span class="ui">Delete</span></td></tr>
+            <tr><td>4</td><td>Computador</td><td><code>curso_bedrock_accessKeys.csv</code>, <code>curso_bedrock_credentials.csv</code> e qualquer anotação com senha ou chave</td></tr>
+          </tbody>
+        </table></div>
+        <div class="note n-tip"><b>Por que nesta ordem</b>
+          <p>A base lê o bucket, então sai primeiro. A chave sai por último, porque é ela que os notebooks usam para acessar a AWS (o notebook RAG, seção 11, também apaga a base e o bucket por código).</p>
+        </div>
+        <div class="check"><div class="check-label">Checklist</div><ul>
+          <li><label><input type="checkbox"><span>Knowledge Base apagada</span></label></li>
+          <li><label><input type="checkbox"><span>Bucket esvaziado e apagado</span></label></li>
+          <li><label><input type="checkbox"><span>Chave de acesso desativada e apagada; CSVs removidos</span></label></li>
+        </ul></div>
+      </div>
+
+      <div class="step" id="passo-6-2">
+        <div class="step-top"><a class="step-id" href="#passo-6-2">6.2</a><h3>Criar um alerta de gastos</h3><span class="where w-console" title="Console da AWS">CONSOLE</span></div>
+        <div class="why"><b>Por quê</b> Um recurso esquecido aparece na fatura só no fim do mês. O alerta avisa no primeiro centavo.</div>
+        <div class="console">
+          <div class="console-head"><b>Console da AWS</b><span>Billing and Cost Management</span></div>
+          <div class="console-path"><span class="console-lbl">Caminho</span><span class="ui">Billing and Cost Management</span><i>›</i><span class="ui">Budgets</span><i>›</i><span class="ui">Create budget</span></div>
+          <div class="console-tela">
+            <table class="console-campos">
+              <thead><tr><th>Campo na tela</th><th>O que fazer</th><th>Para quê</th></tr></thead>
+              <tbody>
+                <tr><td>Templates</td><td><b class="acao">Selecionar</b> <span class="ui">Zero spend budget</span></td><td>Alerta em qualquer cobrança</td></tr>
+                <tr><td>Email recipients</td><td><b class="acao">Digitar</b> o seu e-mail</td><td>Quem recebe o aviso</td></tr>
+              </tbody>
+            </table>
+            <p class="console-fim"><b class="acao">Clicar</b> <kbd class="ui-btn">Create budget</kbd></p>
+          </div>
+        </div>
+        <div class="check"><div class="check-label">Checklist</div><ul>
+          <li><label><input type="checkbox"><span>Budget <span class="ui">Zero spend</span> criado</span></label></li>
+        </ul></div>
+      </div>
+      <div class="recap" data-phase="6">
+        <div class="recap-head">Onde você está · fim da Fase 6</div>
+        <div class="ascii arch recap-map"><div class="arch-svg"></div><div class="arch-leg"><span class="d-done">permanece</span><span class="d-gone">■ removido nesta fase</span><span class="d-todo">■ deixa de funcionar</span></div></div>
+        <dl class="recap-txt">
+          <dt>O que foi feito</dt><dd>Base, bucket e chave apagados; alerta de gastos ligado. Os modelos de fundação não precisam ser apagados: só cobram quando usados.</dd>
+          <dt>Como</dt><dd><ol class="recap-passos"><li>Base, bucket, chave e CSVs (6.1).</li><li>Budget <span class="ui">Zero spend</span> (6.2).</li></ol></dd>
+          <dt>Termos</dt><dd><ul class="recap-termos"><li><b>Budget</b> · limite de gastos com aviso por e-mail.</li></ul></dd>
+          <dt>Por que importa</dt><dd>Terminar o projeto inclui desligar o que custa e revogar o acesso que não será mais usado.</dd>
+        </dl>
+        <p class="recap-next"><b>Próximo projeto</b> Construção de agentes com o Amazon Bedrock</p>
+      </div>
+    </section>
+
+  </main>
+</div>
+
+<footer>
+  <p>Curso Amazon Bedrock Completo: RAG, Agentes e IA Generativa (Udemy) · Projeto RAG · região us-east-1.</p>
+  <p>Diagrama: <a href="arquitetura.svg">arquitetura.svg</a>. Notebooks: <i>Amazon Bedrock curso - RAG</i> e <i>Amazon Bedrock curso - Interface Gráfica com Streamlit</i>.</p>
+</footer>
+
+<script>
+(function () {
+  var STORE = "bedrock-rag-v1";
+  var sections = Array.prototype.slice.call(document.querySelectorAll("section.phase"));
+
+  function load() {
+    try { return JSON.parse(localStorage.getItem(STORE) || "{}"); }
+    catch (e) { return {}; }
+  }
+  function save(state) {
+    try { localStorage.setItem(STORE, JSON.stringify(state)); } catch (e) {}
+  }
+
+  var state = load();
+  var boxes = [];
+
+  sections.forEach(function (sec) {
+    var list = Array.prototype.slice.call(sec.querySelectorAll('input[type="checkbox"]'));
+    list.forEach(function (box, i) {
+      box.dataset.k = sec.id + ":" + i;
+      if (state[box.dataset.k]) { box.checked = true; }
+      box.addEventListener("change", function () {
+        state[box.dataset.k] = box.checked;
+        save(state);
+        render();
+      });
+      boxes.push(box);
+    });
+  });
+
+  /* ---- sumario ---- */
+  var toc = document.getElementById("toc");
+  var links = {};
+  var lastGroup = null;
+  sections.forEach(function (sec) {
+    var badge = sec.querySelector(".phase-n");
+    var raw = badge ? badge.textContent.trim() : "";
+    var short;
+    if (/^FASE/i.test(raw)) { short = "F" + raw.replace(/^FASE\s*/i, ""); }
+    else if (/^ANEXO/i.test(raw)) { short = "A." + raw.slice(-1); }
+    else { short = raw.slice(0, 4); }
+    if (sec.dataset.group && sec.dataset.group !== lastGroup) {
+      var g = document.createElement("div");
+      g.className = "toc-group";
+      g.textContent = sec.dataset.group;
+      toc.appendChild(g);
+      lastGroup = sec.dataset.group;
+    }
+    var a = document.createElement("a");
+    a.href = "#" + sec.id;
+    a.innerHTML = "<b>" + short + "</b><span>" + (sec.dataset.title || "") + "</span>";
+    toc.appendChild(a);
+    links[sec.id] = a;
+  });
+
+  /* ---- progresso ---- */
+  var fill = document.getElementById("progFill");
+  var num = document.getElementById("progNum");
+
+  function render() {
+    var done = boxes.filter(function (b) { return b.checked; }).length;
+    var pct = boxes.length ? Math.round((done / boxes.length) * 100) : 0;
+    fill.style.width = pct + "%";
+    num.textContent = done + " / " + boxes.length;
+
+    sections.forEach(function (sec) {
+      var list = Array.prototype.slice.call(sec.querySelectorAll('input[type="checkbox"]'));
+      var ok = list.filter(function (b) { return b.checked; }).length;
+      var counter = sec.querySelector("[data-count-for]");
+      if (counter && list.length) {
+        counter.textContent = ok + "/" + list.length;
+        counter.classList.toggle("full", ok === list.length);
+      }
+      var link = links[sec.id];
+      if (link) { link.classList.toggle("done", list.length > 0 && ok === list.length); }
+    });
+  }
+
+  document.getElementById("reset").addEventListener("click", function () {
+    if (!window.confirm("Desmarcar todos os itens do checklist?")) { return; }
+    state = {};
+    save(state);
+    boxes.forEach(function (b) { b.checked = false; });
+    render();
+  });
+
+  /* ---- copiar comandos (o prompt em .p fica de fora) ---- */
+  Array.prototype.forEach.call(document.querySelectorAll(".copy"), function (btn) {
+    btn.addEventListener("click", function () {
+      var pre = btn.parentNode.querySelector("pre");
+      if (!pre) { return; }
+      var text = Array.prototype.map.call(pre.childNodes, function (n) {
+        if (n.nodeType === 1 && n.classList.contains("p")) { return ""; }
+        return n.textContent;
+      }).join("");
+
+      var done = function () {
+        btn.textContent = "copiado";
+        btn.classList.add("ok");
+        setTimeout(function () { btn.textContent = "copiar"; btn.classList.remove("ok"); }, 1600);
+      };
+
+      if (navigator.clipboard && navigator.clipboard.writeText) {
+        navigator.clipboard.writeText(text).then(done, function () { fallback(text, done); });
+      } else {
+        fallback(text, done);
+      }
+    });
+  });
+
+  function fallback(text, done) {
+    var ta = document.createElement("textarea");
+    ta.value = text;
+    ta.setAttribute("readonly", "");
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand("copy"); done(); } catch (e) {}
+    document.body.removeChild(ta);
+  }
+
+  /* ---- secao ativa ---- */
+  if ("IntersectionObserver" in window) {
+    var obs = new IntersectionObserver(function (entries) {
+      entries.forEach(function (en) {
+        if (en.isIntersecting) {
+          Object.keys(links).forEach(function (id) { links[id].classList.remove("on"); });
+          if (links[en.target.id]) { links[en.target.id].classList.add("on"); }
+        }
+      });
+    }, { rootMargin: "-80px 0px -70% 0px" });
+    sections.forEach(function (s) { obs.observe(s); });
+  }
+
+  /* ---- tema: todo clique inverte; o sistema decide so o estado inicial ---- */
+  var TEMA_STORE = "bedrock-rag-tema";
+  var btnTema = document.getElementById("tema");
+
+  function sistemaEscuro() {
+    try { return window.matchMedia("(prefers-color-scheme: dark)").matches; }
+    catch (e) { return false; }
+  }
+  function lerTema() {
+    try {
+      var t = localStorage.getItem(TEMA_STORE);
+      if (t === "light" || t === "dark") { return t; }
+    } catch (e) {}
+    return sistemaEscuro() ? "dark" : "light";
+  }
+  function aplicarTema(t, gravar) {
+    document.documentElement.setAttribute("data-theme", t);
+    if (btnTema) {
+      btnTema.textContent = (t === "dark") ? "Tema: escuro" : "Tema: claro";
+      btnTema.setAttribute("aria-label", (t === "dark")
+        ? "Tema escuro. Clique para mudar para o tema claro."
+        : "Tema claro. Clique para mudar para o tema escuro.");
+    }
+    if (gravar) {
+      try { localStorage.setItem(TEMA_STORE, t); } catch (e) {}
+    }
+  }
+  if (btnTema) {
+    aplicarTema(lerTema(), false);
+    btnTema.addEventListener("click", function () {
+      var atual = document.documentElement.getAttribute("data-theme");
+      aplicarTema(atual === "dark" ? "light" : "dark", true);
+    });
+  }
+
+  /* ---- impressao: abre os blocos recolhiveis e devolve o estado depois ---- */
+  var recolhidos = [];
+  window.addEventListener("beforeprint", function () {
+    recolhidos = Array.prototype.filter.call(
+      document.querySelectorAll("details"),
+      function (d) { return !d.open; }
+    );
+    recolhidos.forEach(function (d) { d.open = true; });
+  });
+  window.addEventListener("afterprint", function () {
+    recolhidos.forEach(function (d) { d.open = false; });
+    recolhidos = [];
+  });
+
+  // Mapa de arquitetura: um SVG so (template), colorido conforme a fase
+  var RECAP_FASE = {"regiao": 0, "cred": 0, "pdfs": 1, "s3": 1, "kb": 2, "chunk": 2, "emb": 2, "vet": 2, "sync": 2, "notebook": 3, "fm": 3, "titan": 3, "fluxoC": 3, "busca": 4, "ask": 4, "nova": 4, "rag": 4, "app": 5, "usuario": 5};
+  // limpeza: o que foi apagado sai; o que dependia dele para de funcionar
+  var REMOVIDO = {cred: 1, pdfs: 1, s3: 1, kb: 1, chunk: 1, emb: 1, vet: 1, sync: 1, busca: 1};
+  var PARADO = {rag: 1, fluxoC: 1, usuario: 1};
+  var archTpl = document.getElementById("arch-svg-tpl");
+  function recapClasse(id, n) {
+    if (!id) { return ""; }
+    var f = RECAP_FASE[id];
+    if (n === 6) { return REMOVIDO[id] ? "d-gone" : (PARADO[id] ? "d-todo" : "d-done"); }
+    if (f < n) { return "d-done"; }
+    if (f === n) { return "d-now"; }
+    if (f === n + 1) { return "d-next"; }
+    return "d-todo";
+  }
+  function pintarMapa(host, classe, titulo) {
+    if (!archTpl || !host) { return; }
+    var svg = archTpl.content.firstElementChild.cloneNode(true);
+    Array.prototype.forEach.call(svg.querySelectorAll("[data-k]"), function (el) {
+      var c = classe(el.getAttribute("data-k"));
+      if (c) { c.split(" ").forEach(function (x) { el.classList.add(x); }); }
+    });
+    host.appendChild(svg);
+    marcarCaixas(svg);
+    var btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "arch-zoom";
+    btn.textContent = "ampliar";
+    btn.setAttribute("aria-label", "Ampliar o mapa: " + titulo);
+    btn.addEventListener("click", function () { abrirMapa(svg, titulo, host.parentNode.querySelector(".arch-leg")); });
+    host.appendChild(btn);
+  }
+  // Caixa translucida atras de cada icone/texto destacado: o halo sozinho some em 860px
+  var SVGNS = "http://www.w3.org/2000/svg";
+  function marcarCaixas(svg) {
+    // [cor, opacidade do fundo, tracejado, espessura]
+    var cor = { "d-now": ["#FF8A00", ".22", "none", 2], "d-next": ["#0A8A94", ".12", "6 4", 2], "d-done": ["#2E9E5B", ".06", "none", 1.5] };
+    function estado(el) {
+      var l = el.classList;
+      return l.contains("d-now") ? "d-now" : (l.contains("d-next") ? "d-next" : (l.contains("d-done") ? "d-done" : ""));
+    }
+    function medir(el) { try { return el.getBBox(); } catch (e) { return null; } }
+    // containers ja marcados (SG, ASG, sub-rede...): o que estiver dentro dispensa caixa propria
+    var caixas = Array.prototype.filter.call(svg.querySelectorAll(":scope > rect.d-now, :scope > rect.d-next, :scope > rect.d-done"), function (r) {
+      return +r.getAttribute("width") > 100;
+    }).map(function (r) {
+      return { c: estado(r), k: r.getAttribute("data-k"), x: +r.getAttribute("x"), y: +r.getAttribute("y"), w: +r.getAttribute("width"), h: +r.getAttribute("height") };
+    });
+    function contem(k, b) {
+      return b.x >= k.x && b.y >= k.y && b.x + b.width <= k.x + k.w && b.y + b.height <= k.y + k.h;
+    }
+    // feitos: VPC e DB subnet group so dispensam os proprios textos; SG e ASG deixam cada card
+    // de dentro com a sua caixa verde clara; o box do WSL, so linhas de texto, dispensa tudo
+    var GRANDES = { kb: 1, fm: 1, app: 1, ask: 1, cred: 1, notebook: 1, chunk: 1, emb: 1, vet: 1, busca: 1, nova: 1, titan: 1 }, SO_LINHAS = {};
+    function dentro(b, c, id) {
+      return caixas.some(function (k) {
+        if (k.c !== c) { return false; }
+        if (c === "d-done" && !SO_LINHAS[k.k] && !(GRANDES[k.k] && k.k === id)) { return false; }
+        return contem(k, b);
+      });
+    }
+    // container feito com selo (SG, ASG...): o selo dele ja vale pelo que esta dentro
+    function sobSelo(b, id, fora) {
+      return caixas.some(function (k) {
+        return k !== fora && k.c === "d-done" && (!GRANDES[k.k] || k.k === id) && contem(k, b);
+      });
+    }
+    // selo "ja feito": circulo verde com um check branco
+    var selos = [], ocupados = [];
+    function selo(x, y, raio) {
+      ocupados.push({ x: x, y: y, r: raio });
+      var g = document.createElementNS(SVGNS, "g"), t = document.createElementNS(SVGNS, "title"),
+          c = document.createElementNS(SVGNS, "circle"), v = document.createElementNS(SVGNS, "path");
+      g.setAttribute("class", "arch-hl arch-ok");
+      g.setAttribute("transform", "translate(" + x + "," + y + ") scale(" + raio / 11 + ")");
+      t.textContent = "já feito";
+      c.setAttribute("r", 11);
+      c.setAttribute("fill", "#23864C"); c.setAttribute("stroke", "#fff"); c.setAttribute("stroke-width", 2);
+      v.setAttribute("d", "M-5,0.5 L-1.5,4 L5,-3.5");
+      v.setAttribute("fill", "none"); v.setAttribute("stroke", "#fff"); v.setAttribute("stroke-width", 2.6);
+      v.setAttribute("stroke-linecap", "round"); v.setAttribute("stroke-linejoin", "round");
+      g.appendChild(t); g.appendChild(c); g.appendChild(v);
+      selos.push(g);
+    }
+    // containers feitos: um selo por recurso (a VPC tem varios retangulos), ao lado do rotulo
+    var rotulos = [], comSelo = {};
+    caixas.forEach(function (k) {
+      if (k.c !== "d-done" || comSelo[k.k] || k.y >= 1010) { return; }
+      comSelo[k.k] = true;
+      // rotulo = texto do mesmo recurso na faixa de cima do retangulo; o selo vai no mais a esquerda
+      var rb = null;
+      Array.prototype.forEach.call(svg.querySelectorAll(':scope > text[data-k="' + k.k + '"]'), function (t) {
+        var b = medir(t);
+        if (!b || b.y >= k.y + 30 || b.x < k.x || b.x >= k.x + k.w) { return; }
+        rotulos.push(t);
+        if (!rb || b.x < rb.x) { rb = b; }
+      });
+      if (sobSelo({ x: k.x, y: k.y, width: k.w, height: k.h }, k.k, k)) { return; }
+      if (rb) { selo(rb.x + rb.width + 12, rb.y + rb.height / 2, 9); } else { selo(k.x + k.w, k.y, 9); }
+    });
+    var lista = [];
+    function caixa(b, c, antes, k) {
+      if (!b || !b.width || dentro(b, c, k)) { return; }
+      if (b.y >= 1010) { return; }  // legenda de fluxos: basta o texto colorido com halo
+      lista.push({ k: k, c: c, antes: antes, els: [antes], x1: b.x, y1: b.y, x2: b.x + b.width, y2: b.y + b.height });
+    }
+    Array.prototype.forEach.call(svg.querySelectorAll(":scope > svg, :scope > text"), function (el) {
+      if (el.getAttribute("fill") === "#fff" || rotulos.indexOf(el) >= 0) { return; }
+      var partes = el.querySelectorAll("tspan[data-k]");
+      if (partes.length) {
+        // linha composta: cada trecho recebe a sua caixa, medida so nele
+        Array.prototype.forEach.call(partes, function (t) {
+          var c = estado(t);
+          if (c) { caixa(medir(t), c, el, t.getAttribute("data-k")); }
+        });
+        return;
+      }
+      var c = estado(el);
+      if (!c) { return; }
+      var b;
+      if (el.tagName.toLowerCase() === "svg") {
+        b = { x: +el.getAttribute("x"), y: +el.getAttribute("y"), width: +el.getAttribute("width"), height: +el.getAttribute("height") };
+      } else {
+        b = medir(el);
+      }
+      caixa(b, c, el, el.getAttribute("data-k"));
+    });
+    // um card = uma caixa: junta icone e linhas vizinhas do mesmo recurso
+    // (feitos lado a lado na mesma linha, ou uma linha colada embaixo de um card feito, tambem viram uma caixa so)
+    var juntas = [];
+    lista.forEach(function (a) {
+      var alvo = null;
+      juntas.forEach(function (j) {
+        if (alvo || j.c !== a.c || a.x1 > j.x2 + 16 || a.x2 < j.x1 - 16) { return; }
+        var perto = j.k === a.k && a.y1 <= j.y2 + 10 && a.y2 >= j.y1 - 10;
+        var linha = a.c === "d-done" && (Math.abs(a.y1 + a.y2 - j.y1 - j.y2) < 8 || j.els.indexOf(a.antes) >= 0);
+        var sob = Math.min(a.x2, j.x2) - Math.max(a.x1, j.x1);
+        var colada = a.c === "d-done" && a.y1 <= j.y2 + 6 && a.y2 >= j.y1 - 6 && sob >= 0.6 * Math.min(a.x2 - a.x1, j.x2 - j.x1);
+        // pilula que ja cai quase toda dentro da caixa (task-def-bia no card do ECS)
+        var alto = Math.min(a.y2, j.y2) - Math.max(a.y1, j.y1);
+        var cruza = a.c === "d-done" && sob > 0 && alto > 0 && sob * alto >= 0.5 * (a.x2 - a.x1) * (a.y2 - a.y1);
+        if (perto || linha || colada || cruza) { alvo = j; }
+      });
+      if (alvo) {
+        alvo.x1 = Math.min(alvo.x1, a.x1); alvo.y1 = Math.min(alvo.y1, a.y1);
+        alvo.x2 = Math.max(alvo.x2, a.x2); alvo.y2 = Math.max(alvo.y2, a.y2);
+        alvo.els.push(a.antes);
+      } else {
+        juntas.push(a);
+      }
+    });
+    juntas.forEach(function (j) {
+      var s = cor[j.c], r = document.createElementNS(SVGNS, "rect");
+      r.setAttribute("class", "arch-hl");
+      r.setAttribute("x", j.x1 - 5); r.setAttribute("y", j.y1 - 3);
+      r.setAttribute("width", j.x2 - j.x1 + 10); r.setAttribute("height", j.y2 - j.y1 + 6);
+      r.setAttribute("rx", 5);
+      r.setAttribute("fill", s[0]); r.setAttribute("fill-opacity", s[1]);
+      r.setAttribute("stroke", s[0]); r.setAttribute("stroke-width", s[3]);
+      if (s[2] !== "none") { r.setAttribute("stroke-dasharray", s[2]); }
+      j.antes.parentNode.insertBefore(r, j.antes);
+    });
+    // selos dos cards feitos: card no canto; linha solta, menor, na ponta.
+    // Linha colada num card que ja tem selo (pilula do ECS, role do IAM) fica so com a caixa verde.
+    var feitos = juntas.filter(function (j) {
+      return j.c === "d-done" && !sobSelo({ x: j.x1, y: j.y1, width: j.x2 - j.x1, height: j.y2 - j.y1 }, j.k);
+    });
+    var cards = feitos.filter(function (j) { return j.y2 - j.y1 >= 24; });
+    cards.forEach(function (j) { selo(j.x2 + 5, j.y1 - 3, 9); });
+    feitos.forEach(function (j) {
+      if (j.y2 - j.y1 >= 24) { return; }
+      // so vale para linha do mesmo recurso, ou que cai inteira dentro do card
+      var colada = cards.some(function (k) {
+        var perto = j.x1 < k.x2 && j.x2 > k.x1 && j.y1 <= k.y2 + 12 && j.y2 >= k.y1 - 12;
+        var dentroCard = j.x1 >= k.x1 && j.x2 <= k.x2 && j.y1 >= k.y1 && j.y2 <= k.y2;
+        return (perto && k.k === j.k) || dentroCard;
+      });
+      if (colada) { return; }
+      // selo pequeno nao encosta em outro selo: desliza para a direita
+      var x = j.x2 + 9, y = (j.y1 + j.y2) / 2;
+      function bate() {
+        return ocupados.some(function (o) { return Math.pow(o.x - x, 2) + Math.pow(o.y - y, 2) < Math.pow(o.r + 7 + 3, 2); });
+      }
+      while (bate() && x < j.x2 + 40) { x += 4; }
+      selo(x, y, 7);
+    });
+    // por ultimo, para ficarem por cima de setas e textos
+    selos.forEach(function (g) { svg.appendChild(g); });
+  }
+  var archDlg = null;
+  function abrirMapa(svg, titulo, leg) {
+    if (!archDlg) {
+      archDlg = document.createElement("dialog");
+      archDlg.className = "arch-dlg";
+      archDlg.innerHTML = '<div class="arch-dlg-bar"><span></span><button type="button">fechar</button></div><div class="arch-dlg-body"></div>';
+      archDlg.querySelector("button").addEventListener("click", function () { archDlg.close(); });
+      archDlg.addEventListener("click", function (e) { if (e.target === archDlg) { archDlg.close(); } });
+      document.body.appendChild(archDlg);
+    }
+    archDlg.querySelector(".arch-dlg-bar span").textContent = titulo;
+    var corpo = archDlg.querySelector(".arch-dlg-body");
+    corpo.innerHTML = "";
+    corpo.appendChild(svg.cloneNode(true));
+    var barra = archDlg.querySelector(".arch-dlg-bar span");
+    if (leg) { var l2 = leg.cloneNode(true); l2.style.padding = "4px 0 0"; barra.appendChild(l2); }
+    if (archDlg.showModal) { archDlg.showModal(); } else { archDlg.setAttribute("open", ""); }
+  }
+  Array.prototype.forEach.call(document.querySelectorAll(".arch-svg[data-fase]"), function (host) {
+    var n = parseInt(host.getAttribute("data-fase"), 10);
+    pintarMapa(host, function (id) { return recapClasse(id, n); }, "Início da Fase " + n);
+  });
+  Array.prototype.forEach.call(document.querySelectorAll(".recap"), function (box) {
+    var n = parseInt(box.getAttribute("data-phase"), 10);
+    var head = box.querySelector(".recap-head");
+    pintarMapa(box.querySelector(".recap-map .arch-svg"), function (id) { return recapClasse(id, n); },
+      head ? head.textContent : "Fase " + n);
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

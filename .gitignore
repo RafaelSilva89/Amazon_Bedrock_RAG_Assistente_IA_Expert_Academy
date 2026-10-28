@@ -1,0 +1,28 @@
+# ------------------------------------------------------------------
+# Credenciais da AWS: nunca vão para o GitHub
+# ------------------------------------------------------------------
+curso_bedrock_accessKeys.csv
+curso_bedrock_credentials.csv
+*accessKeys*.csv
+*credentials*.csv
+.env
+.env.*
+!.env.example
+
+# ------------------------------------------------------------------
+# Anotações pessoais (contêm senha e chave em texto puro)
+# ------------------------------------------------------------------
+Notas.txt
+
+# ------------------------------------------------------------------
+# Rascunho da publicação no LinkedIn
+# ------------------------------------------------------------------
+post-linkedin.txt
+
+# ------------------------------------------------------------------
+# Arquivos gerados pelo Python, Jupyter e Streamlit
+# ------------------------------------------------------------------
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+.streamlit/secrets.toml
